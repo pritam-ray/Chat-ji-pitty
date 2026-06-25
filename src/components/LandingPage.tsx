@@ -16,7 +16,7 @@ export function LandingPage({ onGetStarted, onLogin }: LandingPageProps) {
               <div className="w-10 h-10 rounded-lg bg-[var(--accent)] flex items-center justify-center">
                 <MessageSquare className="h-6 w-6 text-white" />
               </div>
-              <span className="text-xl font-bold">ChatGPT Clone</span>
+              <span className="text-xl font-bold">Chat-ji-Pitty</span>
             </div>
             <button
               onClick={onLogin}
@@ -37,10 +37,10 @@ export function LandingPage({ onGetStarted, onLogin }: LandingPageProps) {
             </div>
           </div>
           <h1 className="text-5xl sm:text-6xl font-bold mb-6 bg-gradient-to-r from-[var(--text-primary)] via-[var(--accent)] to-[var(--text-primary)] bg-clip-text text-transparent">
-            Welcome to ChatGPT Clone
+            Welcome to Chat-ji-Pitty
           </h1>
           <p className="text-xl text-[var(--text-secondary)] mb-8 leading-relaxed">
-            Experience the power of AI conversations powered by Azure OpenAI. 
+            Experience the power of AI conversations powered by Gemini AI. 
             Get instant answers, creative inspiration, and intelligent assistance.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -140,8 +140,8 @@ export function LandingPage({ onGetStarted, onLogin }: LandingPageProps) {
       <footer className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center text-sm text-[var(--text-tertiary)]">
-            <p>Powered by Azure OpenAI • Built with React & TypeScript</p>
-            <p className="mt-2">© 2025 ChatGPT Clone. All rights reserved.</p>
+            <p>Powered by Gemini AI • Built with React & TypeScript</p>
+            <p className="mt-2">© 2025 Chat-ji-Pitty. All rights reserved.</p>
           </div>
         </div>
       </footer>

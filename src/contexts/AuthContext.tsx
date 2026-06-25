@@ -31,12 +31,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isSupabaseConfigured) {
       // Mock mode fallback
-      const storedUser = localStorage.getItem('chatgpt-clone-mock-user');
+      const storedUser = localStorage.getItem('chat-ji-pitty-mock-user');
       if (storedUser) {
         try {
           setUser(JSON.parse(storedUser));
         } catch (e) {
-          localStorage.removeItem('chatgpt-clone-mock-user');
+          localStorage.removeItem('chat-ji-pitty-mock-user');
         }
       }
       setIsLoading(false);
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
     if (!isSupabaseConfigured) {
-      localStorage.setItem('chatgpt-clone-mock-user', JSON.stringify(updatedUser));
+      localStorage.setItem('chat-ji-pitty-mock-user', JSON.stringify(updatedUser));
     }
   };
 
@@ -97,8 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastName: '',
       };
       setUser(mockUser);
-      localStorage.setItem('chatgpt-clone-mock-user', JSON.stringify(mockUser));
-      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+      localStorage.setItem('chat-ji-pitty-mock-user', JSON.stringify(mockUser));
+      localStorage.setItem('chat-ji-pitty-show-welcome', 'true');
       return;
     }
 
@@ -125,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         firstName: metadata.first_name || '',
         lastName: metadata.last_name || '',
       });
-      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+      localStorage.setItem('chat-ji-pitty-show-welcome', 'true');
     }
   };
 
@@ -140,8 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastName: 'User',
       };
       setUser(mockUser);
-      localStorage.setItem('chatgpt-clone-mock-user', JSON.stringify(mockUser));
-      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+      localStorage.setItem('chat-ji-pitty-mock-user', JSON.stringify(mockUser));
+      localStorage.setItem('chat-ji-pitty-show-welcome', 'true');
       return;
     }
 
@@ -163,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         firstName: metadata.first_name || '',
         lastName: metadata.last_name || '',
       });
-      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+      localStorage.setItem('chat-ji-pitty-show-welcome', 'true');
     }
   };
 
@@ -171,16 +171,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseConfigured) {
       // Mock Logout
       setUser(null);
-      localStorage.removeItem('chatgpt-clone-mock-user');
-      localStorage.removeItem('chatgpt-clone-active-conversation');
-      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+      localStorage.removeItem('chat-ji-pitty-mock-user');
+      localStorage.removeItem('chat-ji-pitty-active-conversation');
+      localStorage.setItem('chat-ji-pitty-show-welcome', 'true');
       return;
     }
 
     await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('chatgpt-clone-active-conversation');
-    localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+    localStorage.removeItem('chat-ji-pitty-active-conversation');
+    localStorage.setItem('chat-ji-pitty-show-welcome', 'true');
   };
 
   return (

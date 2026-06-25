@@ -16,9 +16,9 @@ import { Attachment, Message, streamChatCompletion } from './services/azureOpenA
 import * as api from './services/api';
 import type { Conversation } from './types/chat';
 
-const THEME_STORAGE_KEY = 'chatgpt-clone-theme';
-const ACTIVE_CONVERSATION_KEY = 'chatgpt-clone-active-conversation';
-const SHOW_WELCOME_KEY = 'chatgpt-clone-show-welcome';
+const THEME_STORAGE_KEY = 'chat-ji-pitty-theme';
+const ACTIVE_CONVERSATION_KEY = 'chat-ji-pitty-active-conversation';
+const SHOW_WELCOME_KEY = 'chat-ji-pitty-show-welcome';
 const DEFAULT_TITLE = 'New chat';
 
 type Theme = 'dark' | 'light';
@@ -917,7 +917,7 @@ function App() {
               <MessageSquare className="h-5 w-5 text-[var(--accent)]" />
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="text-sm sm:text-base font-semibold text-[var(--text-primary)] truncate">ChatGPT Clone</h1>
+              <h1 className="text-sm sm:text-base font-semibold text-[var(--text-primary)] truncate">Chat-ji-Pitty</h1>
               <p className="text-xs sm:text-sm text-[var(--text-tertiary)] truncate">Powered by Gemini AI</p>
             </div>
             <div className="flex-shrink-0 flex items-center gap-2">

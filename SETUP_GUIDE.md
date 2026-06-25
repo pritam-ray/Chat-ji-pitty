@@ -1,6 +1,6 @@
 # Production Setup & Deployment Guide
 
-This guide describes how to deploy the ChatGPT Clone application using **Supabase** for database/authentication, **Netlify** for the frontend React application, and **Render** for the stateless Web Search backend proxy.
+This guide describes how to deploy the Chat-ji-Pitty application using **Supabase** for database/authentication, **Netlify** for the frontend React application, and **Render** for the stateless Web Search backend proxy.
 
 ---
 

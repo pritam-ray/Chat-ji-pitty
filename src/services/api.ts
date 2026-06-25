@@ -18,7 +18,7 @@ if (!isSupabaseConfigured) {
   console.log('[API] Supabase not configured. Using localStorage fallback for persistence.');
 }
 
-const LOCAL_STORAGE_KEY = 'chatgpt-clone-db-conversations';
+const LOCAL_STORAGE_KEY = 'chat-ji-pitty-db-conversations';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
 
 function getLocalConversations(): Conversation[] {

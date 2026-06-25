@@ -152,7 +152,7 @@ function AttachmentPreview({ attachment }: { attachment: Attachment }) {
 export function ChatMessage({ message, isHighlighted, searchQuery }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
-  const label = isUser ? 'You' : isAssistant ? 'ChatGPT' : 'System';
+  const label = isUser ? 'You' : isAssistant ? 'Chat-ji-Pitty' : 'System';
   const displayContent = isUser ? message.displayContent || message.content : message.content;
 
   const rowClass = `chat-row ${isUser ? 'chat-row-user' : 'chat-row-assistant'} ${isHighlighted ? 'message-highlighted' : ''}`;

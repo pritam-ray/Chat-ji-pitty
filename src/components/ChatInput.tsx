@@ -172,7 +172,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isProcessingFile ? 'Processing file...' : 'Message ChatGPT'}
+            placeholder={isProcessingFile ? 'Processing file...' : 'Message Chat-ji-Pitty'}
             disabled={disabled || isProcessingFile}
             className="chat-input-field flex-1 rounded-xl sm:rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2.5 sm:px-5 sm:py-3 text-sm sm:text-[15px] text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus:ring-0"
             aria-label="Message input"
