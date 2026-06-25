@@ -88,8 +88,50 @@ app.post('/api/chat/search', async (req, res) => {
 });
 
 // ========================================
-// Health Check
+// Health Check & Keep-Awake
 // ========================================
+
+// Ping Supabase database REST endpoint to keep it awake/active
+app.get('/api/ping-db', async (req, res) => {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(400).json({
+      success: false,
+      error: 'Supabase URL or Anon Key not configured on the backend server.'
+    });
+  }
+
+  try {
+    const axios = require('axios');
+    const restUrl = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/conversations?select=id&limit=1`;
+    
+    console.log('[Ping DB] Pinging Supabase REST endpoint...');
+    const response = await axios.get(restUrl, {
+      headers: {
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${supabaseAnonKey}`
+      },
+      timeout: 10000
+    });
+
+    console.log('[Ping DB] Supabase response status:', response.status);
+    res.json({
+      success: true,
+      message: 'Supabase database pinged successfully to keep it awake.',
+      status: response.status,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('[Ping DB] Error pinging Supabase:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to ping Supabase database',
+      message: error.message
+    });
+  }
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });

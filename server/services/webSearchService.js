@@ -185,62 +185,87 @@ class WebSearchService {
         return { success: true, usedWebSearch: true };
       }
 
-      // Call Gemini endpoint with fetch (stream: true)
+      const apiKeys = this.apiKey.split(',').map(k => k.trim()).filter(Boolean);
+      if (apiKeys.length === 0) {
+        if (onToken) {
+          onToken('[Demo Mode - Gemini API Key Not Configured in Backend]\n');
+          onToken('Here is what was found:\n' + searchResults.substring(0, 500) + '...');
+        }
+        return { success: true, usedWebSearch: true };
+      }
+
+      let lastError = null;
       const url = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages,
-          stream: true,
-          max_tokens: 4000,
-          temperature: 0.7,
-        })
-      });
 
-      if (!response.ok) {
-        throw new Error(`Gemini API returned ${response.status}`);
-      }
+      for (let idx = 0; idx < apiKeys.length; idx++) {
+        const key = apiKeys[idx];
+        console.log(`[WebSearchService] Attempting connection with API key index ${idx + 1}/${apiKeys.length}`);
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${key}`,
+            },
+            body: JSON.stringify({
+              model: this.model,
+              messages,
+              stream: true,
+              max_tokens: 4000,
+              temperature: 0.7,
+            })
+          });
 
-      if (!reader) {
-        throw new Error('Response body is not readable');
-      }
+          if (!response.ok) {
+            console.warn(`[WebSearchService] Key ${idx + 1} failed with status: ${response.status}`);
+            lastError = new Error(`Gemini API returned ${response.status}`);
+            continue; // Rotate to next key
+          }
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+          if (!reader) {
+            throw new Error('Response body is not readable');
+          }
 
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (trimmedLine === '' || trimmedLine === 'data: [DONE]') continue;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          if (trimmedLine.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(trimmedLine.slice(6));
-              const token = data.choices?.[0]?.delta?.content;
-              if (token && onToken) {
-                onToken(token);
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              if (trimmedLine === '' || trimmedLine === 'data: [DONE]') continue;
+
+              if (trimmedLine.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(trimmedLine.slice(6));
+                  const token = data.choices?.[0]?.delta?.content;
+                  if (token && onToken) {
+                    onToken(token);
+                  }
+                } catch (e) {
+                  // ignore parse errors
+                }
               }
-            } catch (e) {
-              // ignore parse errors
             }
           }
+
+          return { success: true, usedWebSearch: true };
+        } catch (err) {
+          console.warn(`[WebSearchService] Error with Key ${idx + 1}: ${err.message}`);
+          lastError = err;
         }
       }
 
-      return { success: true, usedWebSearch: true };
+      // If all keys fail, throw the last error
+      throw lastError || new Error('All configured API keys failed.');
     } catch (error) {
       console.error('[WebSearchService] Streaming error:', error);
       if (onToken) {

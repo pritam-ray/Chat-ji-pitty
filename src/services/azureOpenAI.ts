@@ -63,81 +63,101 @@ function buildAzureMessages(messages: Message[]) {
 }
 
 export async function* streamChatCompletion(messages: Message[], signal?: AbortSignal) {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const rawApiKeys = import.meta.env.VITE_GEMINI_API_KEY;
   const model = import.meta.env.VITE_GEMINI_MODEL || 'gemini-1.5-flash';
 
-  if (!apiKey) {
+  if (!rawApiKeys) {
     console.warn('[Gemini] VITE_GEMINI_API_KEY not configured. Falling back to local demo mock stream.');
+    yield* mockStreamResponse(messages);
+    return;
+  }
+
+  const apiKeys = rawApiKeys.split(',').map((k: string) => k.trim()).filter(Boolean);
+  if (apiKeys.length === 0) {
+    console.warn('[Gemini] No valid API keys found. Falling back to local demo mock stream.');
     yield* mockStreamResponse(messages);
     return;
   }
 
   const url = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
-  const response = await fetch(url, {
-    method: 'POST',
-    signal: signal,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: buildAzureMessages(messages),
-      stream: true,
-      max_tokens: 4000,
-      temperature: 0.7,
-    }),
-  });
+  for (let idx = 0; idx < apiKeys.length; idx++) {
+    const apiKey = apiKeys[idx];
+    console.log(`[Gemini] Attempting connection with API key index ${idx + 1}/${apiKeys.length}`);
 
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403 || response.status === 404) {
-      console.warn(`[Gemini] API returned status ${response.status}, using demo mock fallback.`);
-      yield* mockStreamResponse(messages);
-      return;
-    }
-    throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
-  }
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        signal: signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: buildAzureMessages(messages),
+          stream: true,
+          max_tokens: 4000,
+          temperature: 0.7,
+        }),
+      });
 
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-
-  if (!reader) {
-    throw new Error('Response body is not readable');
-  }
-
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-
-      if (trimmedLine === '' || trimmedLine === 'data: [DONE]') {
-        continue;
+      if (!response.ok) {
+        console.warn(`[Gemini] Key ${idx + 1} failed with status: ${response.status} ${response.statusText}`);
+        continue; // Try next key in the loop
       }
 
-      if (trimmedLine.startsWith('data: ')) {
-        try {
-          const jsonStr = trimmedLine.slice(6);
-          const data: ChatCompletionChunk = JSON.parse(jsonStr);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
 
-          if (data.choices?.[0]?.delta?.content) {
-            yield data.choices[0].delta.content;
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+
+          if (trimmedLine === '' || trimmedLine === 'data: [DONE]') {
+            continue;
           }
-        } catch (e) {
-          console.error('Error parsing SSE data:', e);
+
+          if (trimmedLine.startsWith('data: ')) {
+            try {
+              const jsonStr = trimmedLine.slice(6);
+              const data: ChatCompletionChunk = JSON.parse(jsonStr);
+
+              if (data.choices?.[0]?.delta?.content) {
+                yield data.choices[0].delta.content;
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
         }
       }
+      return; // Success, exit function
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw err; // User stopped the generation
+      }
+      console.warn(`[Gemini] Error with Key ${idx + 1}: ${err.message}`);
     }
   }
+
+  // If we reach here, all keys failed
+  console.warn('[Gemini] All configured API keys failed. Falling back to local demo mock stream.');
+  yield* mockStreamResponse(messages);
 }
 
 async function* mockStreamResponse(messages: Message[]) {
