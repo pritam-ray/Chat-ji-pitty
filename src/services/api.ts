@@ -30,15 +30,22 @@ function saveLocalConversations(convs: Conversation[]) {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(convs));
 }
 
+// Helper to get active Supabase user if configured and logged in
+async function getActiveUser() {
+  if (!isSupabaseConfigured) return null;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Fetch all conversations from Supabase (or localStorage) - scoped to user_id
 export async function fetchConversations(): Promise<Conversation[]> {
-  if (!isSupabaseConfigured) {
-    return getLocalConversations().sort((a, b) => b.updated_at - a.updated_at);
-  }
-
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getActiveUser();
   if (!user) {
-    return [];
+    return getLocalConversations().sort((a, b) => b.updated_at - a.updated_at);
   }
 
   const { data: conversations, error } = await supabase
@@ -78,14 +85,12 @@ export async function fetchConversations(): Promise<Conversation[]> {
 
 // Get single conversation - scoped to user_id
 export async function fetchConversation(id: string): Promise<Conversation> {
-  if (!isSupabaseConfigured) {
+  const user = await getActiveUser();
+  if (!user) {
     const local = getLocalConversations().find(c => c.id === id);
     if (!local) throw new Error('Conversation not found');
     return local;
   }
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
 
   const { data: conv, error } = await supabase
     .from('conversations')
@@ -130,8 +135,9 @@ export async function createConversation(
   azureResponseId?: string
 ): Promise<Conversation> {
   const now = Date.now();
+  const user = await getActiveUser();
 
-  if (!isSupabaseConfigured) {
+  if (!user) {
     const convs = getLocalConversations();
     const newConv: Conversation = {
       id,
@@ -145,9 +151,6 @@ export async function createConversation(
     saveLocalConversations(convs);
     return newConv;
   }
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
 
   const { data, error } = await supabase
     .from('conversations')
@@ -179,7 +182,8 @@ export async function createConversation(
 
 // Update conversation title
 export async function updateConversationTitle(id: string, title: string): Promise<void> {
-  if (!isSupabaseConfigured) {
+  const user = await getActiveUser();
+  if (!user) {
     const convs = getLocalConversations();
     const target = convs.find(c => c.id === id);
     if (target) {
@@ -206,7 +210,8 @@ export async function updateConversationTitle(id: string, title: string): Promis
 
 // Update conversation Azure response ID
 export async function updateConversationResponse(id: string, azureResponseId: string): Promise<void> {
-  if (!isSupabaseConfigured) {
+  const user = await getActiveUser();
+  if (!user) {
     const convs = getLocalConversations();
     const target = convs.find(c => c.id === id);
     if (target) {
@@ -233,7 +238,8 @@ export async function updateConversationResponse(id: string, azureResponseId: st
 
 // Delete conversation
 export async function deleteConversation(id: string): Promise<void> {
-  if (!isSupabaseConfigured) {
+  const user = await getActiveUser();
+  if (!user) {
     const convs = getLocalConversations().filter(c => c.id !== id);
     saveLocalConversations(convs);
     return;
@@ -259,8 +265,9 @@ export async function addMessage(
   attachments?: any[]
 ): Promise<void> {
   const now = Date.now();
+  const user = await getActiveUser();
 
-  if (!isSupabaseConfigured) {
+  if (!user) {
     const convs = getLocalConversations();
     const target = convs.find(c => c.id === conversationId);
     if (target) {
@@ -330,7 +337,8 @@ export async function addMessage(
 
 // Delete last message from conversation (used for regeneration)
 export async function deleteLastMessage(conversationId: string): Promise<void> {
-  if (!isSupabaseConfigured) {
+  const user = await getActiveUser();
+  if (!user) {
     const convs = getLocalConversations();
     const target = convs.find(c => c.id === conversationId);
     if (target && target.messages.length > 0) {

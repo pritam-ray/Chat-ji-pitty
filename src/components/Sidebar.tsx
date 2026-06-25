@@ -17,6 +17,7 @@ interface SidebarProps {
   user: { username: string; email: string } | null;
   onOpenProfile: () => void;
   onLogout: () => void;
+  onOpenLogin: () => void;
 }
 
 function formatRelativeTime(timestamp: number) {
@@ -48,6 +49,7 @@ export function Sidebar({
   user,
   onOpenProfile,
   onLogout,
+  onOpenLogin,
 }: SidebarProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -207,39 +209,55 @@ export function Sidebar({
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                {user?.username || 'User'}
+                {user?.username || 'Guest User'}
               </p>
               <p className="text-xs text-[var(--text-tertiary)] truncate">
-                {user?.email || ''}
+                {user?.email || 'Sign in to save history'}
               </p>
             </div>
             <MoreHorizontal className="h-4 w-4 text-[var(--text-tertiary)] flex-shrink-0" />
           </button>
-
+ 
           {showUserMenu && (
             <div className="absolute bottom-full left-0 right-0 mb-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] shadow-lg z-50">
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenProfile();
-                  setShowUserMenu(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-control-hover)] transition rounded-t-lg"
-              >
-                <Settings className="h-4 w-4" />
-                Profile Settings
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onLogout();
-                  setShowUserMenu(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-control-hover)] transition border-t border-[var(--border-subtle)] rounded-b-lg"
-              >
-                <LogOut className="h-4 w-4" />
-                Logout
-              </button>
+              {user ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenProfile();
+                      setShowUserMenu(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-control-hover)] transition rounded-t-lg"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Profile Settings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLogout();
+                      setShowUserMenu(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-control-hover)] transition border-t border-[var(--border-subtle)] rounded-b-lg"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenLogin();
+                    setShowUserMenu(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-control-hover)] transition rounded-lg"
+                >
+                  <User className="h-4 w-4 text-[var(--accent)]" />
+                  <span>Log In / Sign Up</span>
+                </button>
+              )}
             </div>
           )}
         </div>

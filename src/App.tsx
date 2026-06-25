@@ -72,6 +72,7 @@ function resolveInitialTheme(): Theme {
 function App() {
   const { isAuthenticated, isLoading: authLoading, user, logout } = useAuth();
   const [showLanding, setShowLanding] = useState(true);
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
@@ -145,10 +146,18 @@ function App() {
     const type = urlParams.get('type');
     if (type === 'recovery') {
       setShowResetPassword(true);
+      setShowAuthScreen(true);
       // Clear query params from URL
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
+
+  // Reset auth screens on successful login
+  useEffect(() => {
+    if (isAuthenticated) {
+      setShowAuthScreen(false);
+    }
+  }, [isAuthenticated]);
 
   // Handle profile page routing
   useEffect(() => {
@@ -768,7 +777,7 @@ function App() {
     );
   }
 
-  if (!isAuthenticated) {
+  if (showAuthScreen && !isAuthenticated) {
     if (showLanding) {
       return (
         <LandingPage 
@@ -809,11 +818,15 @@ function App() {
     }
 
     return showSignup ? (
-      <SignupPage onSwitchToLogin={() => setShowSignup(false)} />
+      <SignupPage 
+        onSwitchToLogin={() => setShowSignup(false)} 
+        onCancel={() => setShowAuthScreen(false)}
+      />
     ) : (
       <LoginPage 
         onSwitchToSignup={() => setShowSignup(true)}
         onForgotPassword={() => setShowForgotPassword(true)}
+        onCancel={() => setShowAuthScreen(false)}
       />
     );
   }
@@ -869,6 +882,11 @@ function App() {
           setShowProfile(true);
         }}
         onLogout={logout}
+        onOpenLogin={() => {
+          setShowLanding(false);
+          setShowSignup(false);
+          setShowAuthScreen(true);
+        }}
       />
 
       {/* Icon bar visible when sidebar is closed on desktop */}
@@ -921,6 +939,19 @@ function App() {
               <p className="text-xs sm:text-sm text-[var(--text-tertiary)] truncate">Powered by Gemini AI</p>
             </div>
             <div className="flex-shrink-0 flex items-center gap-2">
+              {!isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLanding(false);
+                    setShowSignup(false);
+                    setShowAuthScreen(true);
+                  }}
+                  className="flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-control)] px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-control-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                >
+                  Log In
+                </button>
+              )}
               <button
                 type="button"
                 onClick={toggleTheme}

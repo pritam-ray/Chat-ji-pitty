@@ -4,9 +4,10 @@ import { Mail, Lock, User, Eye, EyeOff, Loader2, UserPlus } from 'lucide-react';
 
 interface SignupPageProps {
   onSwitchToLogin: () => void;
+  onCancel?: () => void;
 }
 
-export function SignupPage({ onSwitchToLogin }: SignupPageProps) {
+export function SignupPage({ onSwitchToLogin, onCancel }: SignupPageProps) {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -181,7 +182,7 @@ export function SignupPage({ onSwitchToLogin }: SignupPageProps) {
           </form>
 
           {/* Switch to Login */}
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-3">
             <p className="text-sm text-[var(--text-secondary)]">
               Already have an account?{' '}
               <button
@@ -192,6 +193,15 @@ export function SignupPage({ onSwitchToLogin }: SignupPageProps) {
                 Sign in
               </button>
             </p>
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition underline"
+              >
+                Continue as Guest
+              </button>
+            )}
           </div>
         </div>
 
