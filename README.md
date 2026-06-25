@@ -1,10 +1,11 @@
 # Chat-ji-Pitty 🤖
 
-A premium full-stack AI chatbot application named **Chat-ji-Pitty**. It integrates **Gemini AI** for conversation generation, **Supabase** for user authentication and conversational database persistence, and a stateless **Render** Node.js proxy for live web search queries.
+A premium full-stack AI chatbot application named **Chat-ji-Pitty**. It integrates **Groq (Llama 3.3 70B)** and **Gemini AI** for blazing-fast conversation generation, **Supabase** for user authentication and conversational database persistence, and a stateless **Render** Node.js proxy for live web search queries.
 
 ![Chat-ji-Pitty](https://img.shields.io/badge/React-18.3-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)
 ![Vite](https://img.shields.io/badge/Vite-5.4-purple)
+![Groq](https://img.shields.io/badge/Groq-Llama%203.3-orange)
 ![Gemini AI](https://img.shields.io/badge/Gemini%20AI-API-green)
 ![Supabase](https://img.shields.io/badge/Supabase-Auth%20%26%20DB-red)
 
@@ -12,9 +13,9 @@ A premium full-stack AI chatbot application named **Chat-ji-Pitty**. It integrat
 
 ## ✨ Features
 
-- 🤖 **Gemini AI Integration** - High-speed, streaming completions powered by Google Gemini (Free Tier/Gemini 1.5 Flash).
+- 🤖 **Dual Provider Support (Groq & Gemini)** - Blazing-fast chat completions powered by **Groq (Llama 3.3 70B)** with automatic fallback to **Google Gemini (Gemini 2.0 Flash)**.
 - 💾 **Supabase Authentication & DB** - Robust user authentication, session-based persistence, profiles, and messages stored securely in Supabase.
-- 🔄 **Multi-Key Failover Rotation** - Support for multiple Gemini API keys in a queue with automated failover logic when rate limits are exhausted.
+- 🔄 **Multi-Key Failover Rotation** - Support for multiple API keys in a queue with automated failover logic when rate limits are exhausted.
 - 🔍 **Stateless Web Search** - Cheerio/Axios-powered background search scraper running on Render backend, enabling up-to-the-minute web retrieval fallback.
 - ⏰ **Database Keep-Awake Endpoint** - Exposes a simple `/api/ping-db` route that can be scheduled to ping Supabase, preventing the free database tier from pausing due to inactivity.
 - 📎 **Multimodal Uploads** - Seamless image processing, text files, and full PDF text extraction via PDF.js.
@@ -75,10 +76,13 @@ You can use external free uptime checkers (e.g., [UptimeRobot](https://uptimerob
 Create a `.env` file in the root directory:
 
 ```env
-# Comma-separated Gemini API Keys for failover rotation
-VITE_GEMINI_API_KEY=key_1, key_2, key_3
+# Groq API Configuration (Recommended free provider)
+VITE_GROQ_API_KEY=your_groq_key_here
+VITE_GROQ_MODEL=llama-3.3-70b-versatile
 
-VITE_GEMINI_MODEL=gemini-1.5-flash
+# Comma-separated Gemini API Keys for failover rotation (Requires billing account)
+VITE_GEMINI_API_KEY=key_1, key_2, key_3
+VITE_GEMINI_MODEL=gemini-2.0-flash
 
 # Supabase Auth/DB Configuration
 VITE_SUPABASE_URL=https://your-project.supabase.co
@@ -91,6 +95,8 @@ VITE_API_BASE_URL=http://localhost:4000/api
 Also, create a `.env` in the `server` directory for your search proxy:
 ```env
 PORT=4000
+VITE_GROQ_API_KEY=your_groq_key_here
+VITE_GROQ_MODEL=llama-3.3-70b-versatile
 VITE_GEMINI_API_KEY=key_1, key_2, key_3
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key

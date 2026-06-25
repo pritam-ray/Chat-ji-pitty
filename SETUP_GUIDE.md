@@ -59,7 +59,7 @@ Netlify hosts static web applications directly from GitHub with automatic rebuil
 1. Commit your codebase to GitHub.
 2. Sign in to [Netlify](https://www.netlify.com/).
 3. Click **Add new site** -> **Import an existing project** -> Choose **GitHub**.
-4. Authorize Netlify and select your cloned repository (`Personalized-chatbot`).
+4. Authorize Netlify and select your cloned repository (`Chat-ji-pitty`).
 5. Configure the Build Settings:
    - **Base directory**: (Leave blank if Vite is in the root directory. If your code is inside a subfolder, select it, otherwise leave empty).
    - **Build command**: `npm run build`
@@ -67,8 +67,10 @@ Netlify hosts static web applications directly from GitHub with automatic rebuil
 6. Click **Add Environment Variables** and define the following variables:
    - `VITE_SUPABASE_URL`: (Your Supabase project URL)
    - `VITE_SUPABASE_ANON_KEY`: (Your Supabase Anon Public Key)
-   - `VITE_GEMINI_API_KEY`: (Your Google Gemini API Key from Google AI Studio)
-   - `VITE_GEMINI_MODEL`: `gemini-1.5-flash`
+   - `VITE_GROQ_API_KEY`: (Optional: Your Groq API Key from console.groq.com. Highly recommended!)
+   - `VITE_GROQ_MODEL`: `llama-3.3-70b-versatile` (or other supported models)
+   - `VITE_GEMINI_API_KEY`: (Optional fallback: Your Google Gemini API Key from Google AI Studio)
+   - `VITE_GEMINI_MODEL`: `gemini-2.0-flash`
    - `VITE_API_BASE_URL`: (Your Render backend proxy URL, e.g. `https://your-app.onrender.com/api` - you can configure this after Step 3)
 7. Click **Deploy Site**. Netlify will build and host the app, providing a production URL (e.g., `https://your-site.netlify.app`).
 
@@ -88,8 +90,10 @@ Since scraping web pages directly from the browser throws CORS security blocks, 
    - **Start Command**: `node server.js`
    - **Instance Type**: **Free**
 4. Open the **Environment** tab on Render and add the environment variables:
-   - `VITE_GEMINI_API_KEY`: (Your Google Gemini API Key)
-   - `VITE_GEMINI_MODEL`: `gemini-1.5-flash`
+   - `VITE_GROQ_API_KEY`: (Optional: Your Groq API Key)
+   - `VITE_GROQ_MODEL`: `llama-3.3-70b-versatile`
+   - `VITE_GEMINI_API_KEY`: (Optional: Your Google Gemini API Key)
+   - `VITE_GEMINI_MODEL`: `gemini-2.0-flash`
 5. Click **Deploy Web Service**.
 6. Render will compile and deploy your backend proxy, generating a public URL (e.g., `https://chatbot-search-proxy.onrender.com`).
 7. **Important**: Go back to your **Netlify Environment Variables** and set `VITE_API_BASE_URL` to `https://chatbot-search-proxy.onrender.com/api` so that the frontend can call your search proxy! Re-deploy the Netlify frontend to apply the variable.
