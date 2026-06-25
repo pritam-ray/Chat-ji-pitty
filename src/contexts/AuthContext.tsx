@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../services/supabase';
 
-interface User {
+export interface User {
   id: string;
   email: string;
   username: string;
@@ -10,12 +11,9 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshAccessToken: () => Promise<boolean>;
   updateUser: (user: User) => void;
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -23,182 +21,175 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Function to update user data
+  const isSupabaseConfigured = !!supabase;
+
+  // Sync user state from Supabase Auth (or mock localStorage on mount)
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      // Mock mode fallback
+      const storedUser = localStorage.getItem('chatgpt-clone-mock-user');
+      if (storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch (e) {
+          localStorage.removeItem('chatgpt-clone-mock-user');
+        }
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // Initialize from active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const metadata = session.user.user_metadata || {};
+        setUser({
+          id: session.user.id,
+          email: session.user.email || '',
+          username: metadata.username || '',
+          firstName: metadata.first_name || '',
+          lastName: metadata.last_name || '',
+        });
+      }
+      setIsLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const metadata = session.user.user_metadata || {};
+        setUser({
+          id: session.user.id,
+          email: session.user.email || '',
+          username: metadata.username || '',
+          firstName: metadata.first_name || '',
+          lastName: metadata.last_name || '',
+        });
+      } else {
+        setUser(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [isSupabaseConfigured]);
+
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
-  };
-
-  // Load user from localStorage on mount
-  useEffect(() => {
-    const storedToken = localStorage.getItem('accessToken');
-    const storedRefreshToken = localStorage.getItem('refreshToken');
-    const storedUser = localStorage.getItem('user');
-
-    if (storedToken && storedRefreshToken && storedUser) {
-      try {
-        setAccessToken(storedToken);
-        setRefreshToken(storedRefreshToken);
-        setUser(JSON.parse(storedUser));
-      } catch (error) {
-        console.error('Failed to parse stored user:', error);
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user');
-      }
+    if (!isSupabaseConfigured) {
+      localStorage.setItem('chatgpt-clone-mock-user', JSON.stringify(updatedUser));
     }
-
-    setIsLoading(false);
-  }, []);
-
-  // Set up automatic token refresh before expiration (every 10 minutes)
-  useEffect(() => {
-    if (!refreshToken || !user) return;
-
-    const interval = setInterval(() => {
-      refreshAccessTokenInternal(refreshToken).catch((error) => {
-        console.error('Automatic token refresh failed:', error);
-      });
-    }, 10 * 60 * 1000); // 10 minutes
-
-    return () => clearInterval(interval);
-  }, [refreshToken, user]);
-
-  const refreshAccessTokenInternal = async (token: string): Promise<boolean> => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: token }),
-      });
-
-      if (!response.ok) {
-        console.error('Token refresh failed:', response.status);
-        // Clear invalid tokens
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user');
-        setAccessToken(null);
-        setRefreshToken(null);
-        setUser(null);
-        return false;
-      }
-
-      const data = await response.json();
-      setAccessToken(data.accessToken);
-      localStorage.setItem('accessToken', data.accessToken);
-
-      return true;
-    } catch (error) {
-      console.error('Token refresh error:', error);
-      return false;
-    }
-  };
-
-  const refreshAccessToken = async (): Promise<boolean> => {
-    const token = localStorage.getItem('refreshToken');
-    if (!token) return false;
-    return refreshAccessTokenInternal(token);
   };
 
   const signup = async (email: string, username: string, password: string) => {
-    const response = await fetch(`${API_BASE_URL}/auth/signup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, username, password }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Signup failed');
+    if (!isSupabaseConfigured) {
+      // Mock Sign Up
+      const mockUser: User = {
+        id: Math.random().toString(36).substring(2),
+        email,
+        username,
+        firstName: '',
+        lastName: '',
+      };
+      setUser(mockUser);
+      localStorage.setItem('chatgpt-clone-mock-user', JSON.stringify(mockUser));
+      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+      return;
     }
 
-    const data = await response.json();
-    setUser(data.user);
-    setAccessToken(data.accessToken);
-    setRefreshToken(data.refreshToken);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          username: username,
+        }
+      }
+    });
 
-    // Store in localStorage
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    // Set welcome flag for new user
-    localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+    if (error) {
+      throw error;
+    }
+
+    if (data.user) {
+      const metadata = data.user.user_metadata || {};
+      setUser({
+        id: data.user.id,
+        email: data.user.email || '',
+        username: metadata.username || '',
+        firstName: metadata.first_name || '',
+        lastName: metadata.last_name || '',
+      });
+      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+    }
   };
 
   const login = async (email: string, password: string) => {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Login failed');
+    if (!isSupabaseConfigured) {
+      // Mock Login
+      const mockUser: User = {
+        id: 'mock-user-id',
+        email,
+        username: email.split('@')[0],
+        firstName: 'Demo',
+        lastName: 'User',
+      };
+      setUser(mockUser);
+      localStorage.setItem('chatgpt-clone-mock-user', JSON.stringify(mockUser));
+      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+      return;
     }
 
-    const data = await response.json();
-    setUser(data.user);
-    setAccessToken(data.accessToken);
-    setRefreshToken(data.refreshToken);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    // Store in localStorage
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    // Set welcome flag for returning user
-    localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+    if (error) {
+      throw error;
+    }
+
+    if (data.user) {
+      const metadata = data.user.user_metadata || {};
+      setUser({
+        id: data.user.id,
+        email: data.user.email || '',
+        username: metadata.username || '',
+        firstName: metadata.first_name || '',
+        lastName: metadata.last_name || '',
+      });
+      localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+    }
   };
 
   const logout = async () => {
-    try {
-      const refreshToken = localStorage.getItem('refreshToken');
-      
-      if (refreshToken && accessToken) {
-        await fetch(`${API_BASE_URL}/auth/logout`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ refreshToken }),
-        });
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      // Clear state and localStorage
+    if (!isSupabaseConfigured) {
+      // Mock Logout
       setUser(null);
-      setAccessToken(null);
-      setRefreshToken(null);
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
+      localStorage.removeItem('chatgpt-clone-mock-user');
       localStorage.removeItem('chatgpt-clone-active-conversation');
-      // Set welcome flag so it shows on next login
       localStorage.setItem('chatgpt-clone-show-welcome', 'true');
+      return;
     }
+
+    await supabase.auth.signOut();
+    setUser(null);
+    localStorage.removeItem('chatgpt-clone-active-conversation');
+    localStorage.setItem('chatgpt-clone-show-welcome', 'true');
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        accessToken,
-        refreshToken,
         login,
         signup,
         logout,
-        refreshAccessToken,
         updateUser,
         isLoading,
         isAuthenticated: !!user,

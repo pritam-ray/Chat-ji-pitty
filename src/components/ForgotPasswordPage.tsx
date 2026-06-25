@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Mail, Loader2, Check, ArrowLeft } from 'lucide-react';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+import { supabase } from '../services/supabase';
 
 interface ForgotPasswordPageProps {
   onBack: () => void;
@@ -12,7 +11,6 @@ export function ForgotPasswordPage({ onBack }: ForgotPasswordPageProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState('');
-  const [resetToken, setResetToken] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,21 +18,16 @@ export function ForgotPasswordPage({ onBack }: ForgotPasswordPageProps) {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+      if (!supabase) {
+        throw new Error('Supabase is not configured.');
+      }
+      
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/?type=recovery`,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send reset email');
-      }
-
-      // Store token if in development mode
-      if (data.resetToken) {
-        setResetToken(data.resetToken);
+      if (error) {
+        throw error;
       }
 
       setIsSubmitted(true);
@@ -62,24 +55,6 @@ export function ForgotPasswordPage({ onBack }: ForgotPasswordPageProps) {
           </div>
 
           <div className="bg-[var(--bg-panel)] rounded-2xl border border-[var(--border-strong)] p-8 shadow-xl">
-            {/* Development Mode - Show Token */}
-            {resetToken && (
-              <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-lg px-4 py-3 mb-4">
-                <p className="text-yellow-500 text-sm font-medium mb-2">Development Mode</p>
-                <p className="text-xs text-[var(--text-secondary)] mb-2">Reset token (copy this):</p>
-                <input
-                  type="text"
-                  value={resetToken}
-                  readOnly
-                  className="w-full px-3 py-2 bg-[var(--bg-control)] border border-[var(--border-subtle)] rounded text-xs font-mono text-[var(--text-primary)]"
-                  onClick={(e) => e.currentTarget.select()}
-                />
-                <p className="text-xs text-[var(--text-secondary)] mt-2">
-                  Use this token on the reset password page
-                </p>
-              </div>
-            )}
-
             <div className="space-y-4">
               <div className="bg-[var(--bg-control)] rounded-lg p-4 border border-[var(--border-subtle)]">
                 <h3 className="font-medium text-[var(--text-primary)] mb-2">What's next?</h3>

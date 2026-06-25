@@ -1,10 +1,10 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, MessageSquare, X, MoreHorizontal, ChevronLeft, Search, User, LogOut, Settings } from 'lucide-react';
 import type { Conversation } from '../types/chat';
 
 interface SidebarProps {
   conversations: Conversation[];
-  activeConversationId: string;
+  activeConversationId: string | null;
   isOpen: boolean;
   onSelectConversation: (conversationId: string) => void;
   onNewConversation: () => void;
@@ -44,8 +44,6 @@ export function Sidebar({
   onRenameConversation,
   onDeleteConversation,
   onClose,
-  shouldFocusSearch,
-  onSearchFocused,
   onOpenSearch,
   user,
   onOpenProfile,
@@ -82,6 +80,7 @@ export function Sidebar({
     <aside
       className={`sidebar ${isOpen ? 'sidebar-open' : 'sidebar-closed'} bg-[var(--bg-panel)] text-[var(--text-primary)]`}
       aria-label="Chat history"
+      aria-hidden={!isOpen}
     >
       <div className="sidebar-header">
         <button

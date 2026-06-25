@@ -40,7 +40,7 @@ export function WelcomePage({ onNewChat, userName }: WelcomePageProps) {
             </div>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)]">
-            {userName ? `Welcome back, ${userName}!` : 'What\'s on your mind today?'}
+            {userName ? `Welcome back, ${userName}!` : "What's on your mind today?"}
           </h1>
           <p className="text-base text-[var(--text-secondary)]">
             Start a conversation and get instant, intelligent responses

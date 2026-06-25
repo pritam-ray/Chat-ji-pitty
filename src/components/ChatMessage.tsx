@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { User, Bot, Image as ImageIcon, FileText, RotateCw } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { User, Bot, Image as ImageIcon, FileText } from 'lucide-react';
 import type { Attachment, Message } from '../services/azureOpenAI';
 import { renderMarkdownToHTML } from '../utils/markdown';
 import 'katex/dist/katex.min.css';
@@ -8,8 +8,6 @@ interface ChatMessageProps {
   message: Message;
   isHighlighted?: boolean;
   searchQuery?: string;
-  onRegenerate?: () => void;
-  isLastAssistantMessage?: boolean;
 }
 
 const COPY_ICON = `
@@ -151,7 +149,7 @@ function AttachmentPreview({ attachment }: { attachment: Attachment }) {
   );
 }
 
-export function ChatMessage({ message, isHighlighted, searchQuery, onRegenerate, isLastAssistantMessage }: ChatMessageProps) {
+export function ChatMessage({ message, isHighlighted, searchQuery }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
   const label = isUser ? 'You' : isAssistant ? 'ChatGPT' : 'System';
@@ -165,19 +163,6 @@ export function ChatMessage({ message, isHighlighted, searchQuery, onRegenerate,
     isUser ? 'chat-card-user' : isAssistant ? 'chat-card-assistant' : 'chat-card-system'
   }`;
   const shouldShowHeader = !isUser;
-  const [copied, setCopied] = useState(false);
-
-  const copyMessageToClipboard = async () => {
-    try {
-      // Copy raw content (markdown as-is)
-      const textToCopy = isAssistant ? (message.content || '') : (displayContent || '');
-      await navigator.clipboard.writeText(textToCopy);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy message:', err);
-    }
-  };
 
   return (
     <article className={rowClass} data-message-id={message.id}>
@@ -228,31 +213,6 @@ export function ChatMessage({ message, isHighlighted, searchQuery, onRegenerate,
             ))}
           </div>
         ) : null}
-        {/* Action buttons: Copy and Regenerate (for assistant messages) - Always visible */}
-        {isAssistant && (
-          <div className="message-actions flex items-center gap-1 mt-2">
-            <button
-              type="button"
-              onClick={copyMessageToClipboard}
-              className="message-action-btn"
-              title={copied ? 'Copied!' : 'Copy'}
-              aria-label="Copy message"
-            >
-              <span className="action-icon" dangerouslySetInnerHTML={{ __html: copied ? SUCCESS_ICON : COPY_ICON }} />
-            </button>
-            {isLastAssistantMessage && onRegenerate && (
-              <button
-                type="button"
-                onClick={onRegenerate}
-                className="message-action-btn"
-                title="Regenerate response"
-                aria-label="Regenerate response"
-              >
-                <RotateCw className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </article>
   );

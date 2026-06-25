@@ -1,14 +1,12 @@
 import { useState } from 'react';
 import { Lock, Eye, EyeOff, Loader2, Check, AlertCircle } from 'lucide-react';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+import { supabase } from '../services/supabase';
 
 interface ResetPasswordPageProps {
-  token: string;
   onSuccess: () => void;
 }
 
-export function ResetPasswordPage({ token, onSuccess }: ResetPasswordPageProps) {
+export function ResetPasswordPage({ onSuccess }: ResetPasswordPageProps) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,16 +31,14 @@ export function ResetPasswordPage({ token, onSuccess }: ResetPasswordPageProps) 
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, newPassword }),
-      });
+      if (!supabase) {
+        throw new Error('Supabase is not configured.');
+      }
 
-      const data = await response.json();
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to reset password');
+      if (error) {
+        throw error;
       }
 
       setIsSuccess(true);

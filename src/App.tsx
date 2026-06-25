@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { MessageSquare, Moon, Sun, Menu, Bot, Plus, Search, User, LogOut } from 'lucide-react';
+import { MessageSquare, Moon, Sun, Menu, Bot, Plus, Search } from 'lucide-react';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { Sidebar } from './components/Sidebar';
@@ -13,7 +13,6 @@ import { ResetPasswordPage } from './components/ResetPasswordPage';
 import { ProfilePage } from './components/ProfilePage';
 import { useAuth } from './contexts/AuthContext';
 import { Attachment, Message, streamChatCompletion } from './services/azureOpenAI';
-import { azureResponseAPI } from './services/azureResponseAPI';
 import * as api from './services/api';
 import type { Conversation } from './types/chat';
 
@@ -44,7 +43,6 @@ const createConversation = (): Conversation => {
 };
 
 const loadInitialConversationState = (): ConversationState => {
-  // Initial empty state - no conversation selected (will show welcome page)
   return { conversations: [], activeConversationId: null };
 };
 
@@ -59,68 +57,6 @@ const summarizeTitle = (conversation: Conversation, content: string) => {
   }
 
   return cleaned.length > 40 ? `${cleaned.slice(0, 40).trim()}…` : cleaned;
-};
-
-// Generate a meaningful title from AI response using Azure OpenAI
-const generateTitleFromResponse = async (userMessage: string, assistantResponse: string): Promise<string> => {
-  try {
-    const endpoint = import.meta.env.VITE_AZURE_OPENAI_ENDPOINT;
-    const apiKey = import.meta.env.VITE_AZURE_OPENAI_API_KEY;
-    const deployment = import.meta.env.VITE_AZURE_OPENAI_DEPLOYMENT_NAME;
-    const apiVersion = import.meta.env.VITE_AZURE_OPENAI_API_VERSION;
-
-    if (!endpoint || !apiKey || !deployment) {
-      console.warn('Azure OpenAI not configured for title generation');
-      return summarizeTitle({ title: DEFAULT_TITLE } as Conversation, userMessage);
-    }
-
-    const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': apiKey,
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content: 'Generate a concise, descriptive title (3-6 words) for this conversation. Return only the title, nothing else.',
-          },
-          {
-            role: 'user',
-            content: userMessage,
-          },
-          {
-            role: 'assistant',
-            content: assistantResponse,
-          },
-        ],
-        max_tokens: 20,
-        temperature: 0.5,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to generate title: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const generatedTitle = data.choices?.[0]?.message?.content?.trim();
-
-    if (generatedTitle && generatedTitle.length > 0) {
-      // Clean up the title - remove quotes if present
-      return generatedTitle.replace(/^["']|["']$/g, '').slice(0, 50);
-    }
-
-    // Fallback to user message-based title
-    return summarizeTitle({ title: DEFAULT_TITLE } as Conversation, userMessage);
-  } catch (error) {
-    console.error('Error generating title:', error);
-    // Fallback to user message-based title
-    return summarizeTitle({ title: DEFAULT_TITLE } as Conversation, userMessage);
-  }
 };
 
 function resolveInitialTheme(): Theme {
@@ -139,10 +75,8 @@ function App() {
   const [showSignup, setShowSignup] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
-  const [resetToken, setResetToken] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [shouldShowWelcome, setShouldShowWelcome] = useState(() => {
-    // Check if we should show welcome page from localStorage
     if (typeof window !== 'undefined') {
       return window.localStorage.getItem(SHOW_WELCOME_KEY) === 'true';
     }
@@ -171,9 +105,7 @@ function App() {
 
   const scrollToBottom = (immediate = false) => {
     const now = Date.now();
-    // Throttle scrolling to every 100ms during streaming
     if (!immediate && now - lastScrollTime.current < 100) {
-      // Schedule a delayed scroll
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
@@ -189,7 +121,6 @@ function App() {
   };
 
   useEffect(() => {
-    // Only scroll when not streaming or when messages change significantly
     if (!isLoading) {
       scrollToBottom(true);
     }
@@ -208,17 +139,16 @@ function App() {
     return () => document.removeEventListener('click', handleClick);
   }, [highlightedMessageId]);
 
-  // Check for password reset token in URL on mount
+  // Check for password reset redirect in URL on mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-    if (token && !isAuthenticated) {
-      setResetToken(token);
+    const type = urlParams.get('type');
+    if (type === 'recovery') {
       setShowResetPassword(true);
-      // Clear token from URL
+      // Clear query params from URL
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [isAuthenticated]);
+  }, []);
 
   // Handle profile page routing
   useEffect(() => {
@@ -245,11 +175,10 @@ function App() {
         const dbConversations = await api.fetchConversations();
         
         if (dbConversations.length > 0) {
-          // Map database fields to frontend structure
           const mapped = dbConversations.map(conv => ({
             id: conv.id,
             title: conv.title,
-            messages: (conv.messages || []).map((msg: Message) => ({
+            messages: (conv.messages || []).map((msg: any) => ({
               ...msg,
               id: msg.id || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2, 11)),
             })),
@@ -259,23 +188,16 @@ function App() {
           }));
           
           const sorted = mapped.sort((a, b) => b.updatedAt - a.updatedAt);
-          
-          // Check if there's a stored active conversation ID from previous session
           const storedActiveId = window.localStorage.getItem(ACTIVE_CONVERSATION_KEY);
           
-          // If we have a stored conversation and it exists in database, restore it
-          // This ensures refresh keeps you in the same conversation
           if (storedActiveId && sorted.some(c => c.id === storedActiveId)) {
             setConversationState({
               conversations: sorted,
               activeConversationId: storedActiveId,
             });
-            // Clear welcome flag since we're restoring a conversation
             setShouldShowWelcome(false);
             window.localStorage.removeItem(SHOW_WELCOME_KEY);
           } else {
-            // No stored conversation or it doesn't exist
-            // Check if we should show welcome page
             const showWelcome = window.localStorage.getItem(SHOW_WELCOME_KEY) === 'true';
             setConversationState({
               conversations: sorted,
@@ -284,7 +206,6 @@ function App() {
             setShouldShowWelcome(showWelcome);
           }
         } else {
-          // No conversations in database - show welcome page only if flag is set
           const showWelcome = window.localStorage.getItem(SHOW_WELCOME_KEY) === 'true';
           setConversationState({
             conversations: [],
@@ -303,10 +224,8 @@ function App() {
   // Save active conversation ID to localStorage and clear welcome flag
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    // When user opens/creates a conversation, save it and clear welcome flag
     if (activeConversationId) {
       window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, activeConversationId);
-      // Clear welcome flag since user is now in a conversation
       setShouldShowWelcome(false);
       window.localStorage.removeItem(SHOW_WELCOME_KEY);
     }
@@ -315,10 +234,8 @@ function App() {
   // Set welcome flag when user logs in
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
-      // Check if this is a fresh login (no active conversation stored)
       const hasStoredConversation = window.localStorage.getItem(ACTIVE_CONVERSATION_KEY);
       if (!hasStoredConversation) {
-        // First time after login - show welcome
         setShouldShowWelcome(true);
         window.localStorage.setItem(SHOW_WELCOME_KEY, 'true');
       }
@@ -373,7 +290,6 @@ function App() {
 
     const trimmed = nextTitle.trim() || DEFAULT_TITLE;
     
-    // Update in database
     try {
       await api.updateConversationTitle(conversationId, trimmed);
     } catch (error) {
@@ -388,7 +304,9 @@ function App() {
   };
 
   const handleDeleteConversation = async (conversationId: string) => {
-    // Delete from database
+    const confirmDelete = window.confirm('Delete this conversation?');
+    if (!confirmDelete) return;
+
     try {
       await api.deleteConversation(conversationId);
     } catch (error) {
@@ -398,10 +316,9 @@ function App() {
     setConversationState((prev) => {
       const remaining = prev.conversations.filter((conversation) => conversation.id !== conversationId);
       if (remaining.length === 0) {
-        const conversation = createConversation();
         return {
-          conversations: [conversation],
-          activeConversationId: conversation.id,
+          conversations: [],
+          activeConversationId: null,
         };
       }
 
@@ -418,11 +335,9 @@ function App() {
   };
 
   const handleSelectConversation = async (conversationId: string, messageId?: string, searchQuery?: string) => {
-    // Check and delete empty conversation before switching
     const currentActive = conversationState.conversations.find((c) => c.id === conversationState.activeConversationId);
     
     if (currentActive && currentActive.messages.length === 0 && conversationState.activeConversationId !== conversationId) {
-      // Delete from database
       try {
         await api.deleteConversation(currentActive.id);
       } catch (error) {
@@ -435,7 +350,6 @@ function App() {
         return prev;
       }
 
-      // Remove the current active conversation if it's empty
       const currentActive = prev.conversations.find((c) => c.id === prev.activeConversationId);
       let updatedConversations = prev.conversations;
       
@@ -449,12 +363,10 @@ function App() {
       };
     });
     
-    // Set highlight info if provided
     if (messageId && searchQuery) {
       setHighlightedMessageId(messageId);
       setSearchQueryForHighlight(searchQuery);
       
-      // Scroll to the message after a short delay to ensure DOM is updated
       setTimeout(() => {
         const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
         if (messageElement) {
@@ -481,9 +393,8 @@ function App() {
     if (!activeConversation || isLoading) return;
     
     const messages = activeConversation.messages;
-    if (messages.length < 2) return; // Need at least a user message and assistant response
+    if (messages.length < 2) return;
     
-    // Get the last assistant message and the user message before it
     const lastMessage = messages[messages.length - 1];
     if (lastMessage.role !== 'assistant') return;
     
@@ -491,7 +402,6 @@ function App() {
     const lastUserMessage = messages[lastUserMessageIndex];
     if (lastUserMessage.role !== 'user') return;
     
-    // Delete last assistant message from database
     try {
       await api.deleteLastMessage(activeConversation.id);
     } catch (error) {
@@ -500,7 +410,6 @@ function App() {
       return;
     }
     
-    // Remove last assistant message from state
     const updatedMessages = messages.slice(0, -1);
     updateConversationById(activeConversation.id, (conversation) => ({
       ...conversation,
@@ -513,7 +422,6 @@ function App() {
     setAbortController(controller);
 
     try {
-      // Create new assistant message for the regenerated response
       const assistantMessage: Message = {
         id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2, 11),
         role: 'assistant',
@@ -526,142 +434,55 @@ function App() {
         updatedAt: Date.now(),
       }));
 
-      // Use Azure Response API with streaming
-      if (azureResponseAPI.isConfigured()) {
-        console.log('[Regenerate] Using Azure Response API');
-        
+      // Use Web Search if it was originally search or search toggle is active
+      if (webSearchEnabled) {
+        console.log('[Regenerate] Using Web Search');
         try {
-          // Format input for Response API
-          let input: any;
-          if (lastUserMessage.attachments && lastUserMessage.attachments.length > 0) {
-            const contentParts: any[] = [];
-            
-            if (lastUserMessage.content.trim()) {
-              contentParts.push({ type: 'input_text', text: lastUserMessage.content });
-            }
-            
-            for (const attachment of lastUserMessage.attachments) {
-              if (attachment.type === 'image') {
-                contentParts.push({ type: 'input_image', image_url: attachment.dataUrl });
-              } else if (attachment.type === 'pdf') {
-                contentParts.push({ 
-                  type: 'input_file', 
-                  filename: attachment.fileName, 
-                  file_data: attachment.dataUrl 
-                });
-              }
-            }
-            
-            input = [{ role: 'user', content: contentParts }];
-          } else {
-            input = lastUserMessage.content;
-          }
-
-          let responseId = activeConversation.azureResponseId;
-          
-          // Stream the response
-          for await (const chunk of azureResponseAPI.streamWithContext(input, { 
-            previousResponseId: activeConversation.azureResponseId 
-          })) {
-            if (controller.signal.aborted) {
-              break;
-            }
-
-            if (chunk.done) {
-              if (chunk.responseId) {
-                responseId = chunk.responseId;
-                try {
-                  await api.updateConversationResponse(conversationId, responseId);
-                  updateConversationById(conversationId, (conversation) => ({
-                    ...conversation,
-                    azureResponseId: responseId,
-                  }));
-                  console.log('[Regenerate] ✓ Response ID saved:', responseId);
-                } catch (error) {
-                  console.error('[Regenerate] Failed to save response ID:', error);
-                }
-              }
-              break;
-            }
-
-            assistantMessage.content += chunk.content;
-
-            // Batch updates
-            const contentLength = assistantMessage.content.length;
-            const shouldUpdate = contentLength % 50 === 0 || chunk.content.includes('\n');
-            
-            if (shouldUpdate) {
-              updateConversationById(conversationId, (conversation) => {
-                const updated = [...conversation.messages];
-                const lastIndex = updated.length - 1;
-                if (lastIndex >= 0) {
-                  updated[lastIndex] = { ...updated[lastIndex], content: assistantMessage.content };
-                }
-                return { ...conversation, messages: updated, updatedAt: Date.now() };
-              });
+          await api.searchWebStream(
+            lastUserMessage.content,
+            conversationId,
+            (token: string) => {
+              if (controller.signal.aborted) return;
+              assistantMessage.content += token;
+              updateConversationById(conversationId, (conversation) => ({
+                ...conversation,
+                messages: [...updatedMessages, { ...assistantMessage }],
+                updatedAt: Date.now(),
+              }));
               scrollToBottom();
-            }
-          }
-
-          // Final update
-          updateConversationById(conversationId, (conversation) => {
-            const updated = [...conversation.messages];
-            const lastIndex = updated.length - 1;
-            if (lastIndex >= 0) {
-              updated[lastIndex] = { ...updated[lastIndex], content: assistantMessage.content };
-            }
-            return { ...conversation, messages: updated, updatedAt: Date.now() };
-          });
-
-          // Save to database
-          try {
-            await api.addMessage(
-              conversationId,
-              'assistant',
-              assistantMessage.content,
-              assistantMessage.content
-            );
-          } catch (error) {
-            console.error('[Regenerate] Failed to save message:', error);
-          }
-        } catch (error: any) {
-          if (error.name === 'AbortError') {
-            console.log('[Regenerate] Request cancelled');
-          } else {
-            console.error('[Regenerate] Azure Response API error:', error);
-            throw error;
-          }
-        }
-      } else {
-        // Fallback to standard API
-        console.log('[Regenerate] Using standard API');
-        const MAX_CONTEXT_MESSAGES = 20;
-        const messageHistory = updatedMessages.slice(-MAX_CONTEXT_MESSAGES);
-
-        for await (const chunk of streamChatCompletion([...messageHistory, lastUserMessage])) {
-          if (controller.signal.aborted) {
-            break;
-          }
-
-          assistantMessage.content += chunk;
-
-          const contentLength = assistantMessage.content.length;
-          const shouldUpdate = contentLength % 50 === 0 || chunk.includes('\n');
-          
-          if (shouldUpdate) {
-            updateConversationById(conversationId, (conversation) => {
-              const updated = [...conversation.messages];
-              const lastIndex = updated.length - 1;
-              if (lastIndex >= 0) {
-                updated[lastIndex] = { ...updated[lastIndex], content: assistantMessage.content };
+            },
+            async () => {
+              try {
+                await api.addMessage(conversationId, 'assistant', assistantMessage.content);
+              } catch (error) {
+                console.error('[Regenerate] Failed to save assistant message:', error);
               }
-              return { ...conversation, messages: updated, updatedAt: Date.now() };
-            });
-            scrollToBottom();
-          }
+              setIsLoading(false);
+              setAbortController(null);
+            },
+            (error: string) => {
+              console.error('[Regenerate] Web search error:', error);
+              assistantMessage.content = 'Failed to generate search results.';
+              updateConversationById(conversationId, (conversation) => ({
+                ...conversation,
+                messages: [...updatedMessages, { ...assistantMessage }],
+                updatedAt: Date.now(),
+              }));
+              setIsLoading(false);
+              setAbortController(null);
+            }
+          );
+          return;
+        } catch (error) {
+          console.error('[Regenerate] Web search failed:', error);
         }
+      }
 
-        // Final update
+      // Standard completions
+      for await (const chunk of streamChatCompletion(updatedMessages, controller.signal)) {
+        if (controller.signal.aborted) break;
+
+        assistantMessage.content += chunk;
         updateConversationById(conversationId, (conversation) => {
           const updated = [...conversation.messages];
           const lastIndex = updated.length - 1;
@@ -670,15 +491,12 @@ function App() {
           }
           return { ...conversation, messages: updated, updatedAt: Date.now() };
         });
+        scrollToBottom();
+      }
 
-        // Save to database
+      if (assistantMessage.content) {
         try {
-          await api.addMessage(
-            conversationId,
-            'assistant',
-            assistantMessage.content,
-            assistantMessage.content
-          );
+          await api.addMessage(conversationId, 'assistant', assistantMessage.content);
         } catch (error) {
           console.error('[Regenerate] Failed to save message:', error);
         }
@@ -695,15 +513,12 @@ function App() {
   };
 
   const handleNewConversation = async () => {
-    // Check if the current active conversation is already empty
     const currentActive = conversations.find((c) => c.id === activeConversationId);
     if (currentActive && currentActive.messages.length === 0) {
-      // Don't create a new chat if the current one is already empty
       setIsSidebarOpen(false);
       return;
     }
 
-    // Delete current empty conversation if switching away from it
     if (currentActive && currentActive.messages.length === 0) {
       try {
         await api.deleteConversation(currentActive.id);
@@ -714,16 +529,12 @@ function App() {
 
     const conversation = createConversation();
     
-    // Don't create in database yet - will be created when first message is sent
-    
-    // Clear welcome flag when creating new conversation
     setShouldShowWelcome(false);
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(SHOW_WELCOME_KEY);
     }
     
     setConversationState((prev) => {
-      // Remove previous empty conversation from state if exists
       const updatedConversations = currentActive && currentActive.messages.length === 0
         ? prev.conversations.filter((c) => c.id !== currentActive.id)
         : prev.conversations;
@@ -744,13 +555,10 @@ function App() {
     attachments?: Attachment[],
     useWebSearch?: boolean,
   ) => {
-    console.log('[App] handleSendMessage called with useWebSearch:', useWebSearch);
-    
     // If no active conversation, create one first
-    if (!activeConversation) {
+    if (!activeConversationId) {
       const conversation = createConversation();
       
-      // Create in database
       try {
         await api.createConversation(conversation.id, conversation.title);
       } catch (error) {
@@ -764,40 +572,37 @@ function App() {
         activeConversationId: conversation.id,
       }));
       
-      // Wait a bit for state to update, then send the message
       setTimeout(() => {
         handleSendMessage(content, displayContent, _fileName, attachments, useWebSearch);
       }, 100);
       return;
     }
 
-    const conversationId = activeConversation.id;
-    const isFirstMessage = activeConversation.messages.length === 0;
+    const conversationId = activeConversationId;
+    const currentActive = conversations.find(c => c.id === conversationId);
+    const isFirstMessage = currentActive ? currentActive.messages.length === 0 : true;
     
-    // If this is the first message, create conversation in database
     if (isFirstMessage) {
       try {
-        await api.createConversation(conversationId, activeConversation.title);
-        console.log('Conversation created in database:', conversationId);
+        await api.createConversation(conversationId, DEFAULT_TITLE);
       } catch (error: any) {
-        // If conversation already exists, that's fine - continue
         if (!error.message?.includes('already exists')) {
           console.error('Failed to create conversation in database:', error);
         }
       }
     }
+
     const userMessage: Message = {
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2, 11),
       role: 'user',
-      content, // Full content for API
-      displayContent: displayContent || content, // Display content for UI
+      content,
+      displayContent: displayContent || content,
       attachments,
     };
 
-    const conversationMessages = activeConversation.messages;
+    const conversationMessages = currentActive ? currentActive.messages : [];
     const updatedMessages = [...conversationMessages, userMessage];
 
-    // Save user message to database
     try {
       await api.addMessage(
         conversationId,
@@ -833,19 +638,15 @@ function App() {
         updatedAt: Date.now(),
       }));
 
-      // Use Web Search if enabled
+      // Use Web Search proxy stream if enabled
       if (useWebSearch) {
-        console.log('[App] Using Web Search with LangChain');
+        console.log('[App] Using stateless Web Search proxy');
         try {
           await api.searchWebStream(
             content,
             conversationId,
             (token: string) => {
-              // Check if generation was stopped
-              if (controller.signal.aborted) {
-                return;
-              }
-
+              if (controller.signal.aborted) return;
               assistantMessage.content += token;
               updateConversationById(conversationId, (conversation) => ({
                 ...conversation,
@@ -854,41 +655,29 @@ function App() {
               }));
               scrollToBottom();
             },
-            async (usedWebSearch: boolean) => {
-              // Streaming complete
-              console.log('[App] Web search streaming complete. Used search:', usedWebSearch);
-              
-              // Save assistant message to database
+            async () => {
               try {
-                await api.addMessage(
-                  conversationId,
-                  'assistant',
-                  assistantMessage.content
-                );
+                await api.addMessage(conversationId, 'assistant', assistantMessage.content);
               } catch (error) {
                 console.error('[App] Failed to save assistant message:', error);
               }
 
-              // Generate title if first message
+              // Update title dynamically on first response
               if (isFirstMessage && assistantMessage.content) {
-                try {
-                  const title = await generateTitleFromResponse(content, assistantMessage.content);
-                  await api.updateConversationTitle(conversationId, title);
-                  updateConversationById(conversationId, (conversation) => ({
-                    ...conversation,
-                    title,
-                  }));
-                } catch (error) {
-                  console.error('[App] Failed to generate title:', error);
-                }
+                const generatedTitle = summarizeTitle(activeConversation || { title: DEFAULT_TITLE } as any, content);
+                await api.updateConversationTitle(conversationId, generatedTitle);
+                updateConversationById(conversationId, (conversation) => ({
+                  ...conversation,
+                  title: generatedTitle,
+                }));
               }
 
               setIsLoading(false);
               setAbortController(null);
             },
             (error: string) => {
-              console.error('[App] Web search error:', error);
-              assistantMessage.content = 'I apologize, but I encountered an error while searching the web. Please try again.';
+              console.error('[App] Web search stream failed:', error);
+              assistantMessage.content = 'I apologize, but I encountered an error while searching the web.';
               updateConversationById(conversationId, (conversation) => ({
                 ...conversation,
                 messages: [...updatedMessages, { ...assistantMessage }],
@@ -898,139 +687,31 @@ function App() {
               setAbortController(null);
             }
           );
-          return; // Exit early since web search handles the response
+          return;
         } catch (error) {
-          console.error('[App] Web search failed:', error);
-          // Fall through to regular Azure OpenAI if web search fails
+          console.error('[App] Web search failed, falling back to Gemini:', error);
         }
       }
 
-      // Primary: Use Azure Response API (supports text, images, PDFs with stateful context)
-      if (azureResponseAPI.isConfigured()) {
-        console.log('[App] Using Azure Response API with stateful chaining');
-        console.log('[App] Previous Response ID:', activeConversation.azureResponseId || 'New conversation');
-        
-        try {
-          // Format input for Response API
-          let input: any;
-          if (attachments && attachments.length > 0) {
-            // Multi-modal input with attachments
-            const contentParts: any[] = [];
-            
-            if (content.trim()) {
-              contentParts.push({ type: 'input_text', text: content });
-            }
-            
-            for (const attachment of attachments) {
-              if (attachment.type === 'image') {
-                contentParts.push({ type: 'input_image', image_url: attachment.dataUrl });
-              } else if (attachment.type === 'pdf') {
-                contentParts.push({ 
-                  type: 'input_file', 
-                  filename: attachment.fileName, 
-                  file_data: attachment.dataUrl 
-                });
-              }
-            }
-            
-            input = [{ role: 'user', content: contentParts }];
-          } else {
-            input = content;
+      // Standard Gemini API streaming
+      const MAX_CONTEXT_MESSAGES = 20;
+      const messageHistory = updatedMessages.slice(-MAX_CONTEXT_MESSAGES);
+
+      for await (const chunk of streamChatCompletion(messageHistory, controller.signal)) {
+        if (controller.signal.aborted) break;
+
+        assistantMessage.content += chunk;
+        updateConversationById(conversationId, (conversation) => {
+          const updated = [...conversation.messages];
+          const lastIndex = updated.length - 1;
+          if (lastIndex >= 0) {
+            updated[lastIndex] = { ...updated[lastIndex], content: assistantMessage.content };
           }
-          
-          let responseId = activeConversation.azureResponseId;
-          
-          for await (const chunk of azureResponseAPI.streamWithContext(input, { 
-            previousResponseId: activeConversation.azureResponseId 
-          })) {
-            // Check if generation was stopped
-            if (controller.signal.aborted) {
-              break;
-            }
-
-            if (chunk.done) {
-              if (chunk.responseId) {
-                responseId = chunk.responseId;
-                try {
-                  await api.updateConversationResponse(conversationId, responseId);
-                  updateConversationById(conversationId, (conversation) => ({
-                    ...conversation,
-                    azureResponseId: responseId,
-                  }));
-                  console.log('[App] ✓ Response ID saved:', responseId);
-                } catch (error) {
-                  console.error('[App] Failed to save response ID:', error);
-                }
-              }
-              break;
-            }
-
-            assistantMessage.content += chunk.content;
-
-            // Batch updates: only update state every few chunks to reduce re-renders
-            const contentLength = assistantMessage.content.length;
-            const shouldUpdate = contentLength % 50 === 0 || chunk.content.includes('\n');
-            
-            if (shouldUpdate) {
-              updateConversationById(conversationId, (conversation) => {
-                const updated = [...conversation.messages];
-                const lastIndex = updated.length - 1;
-                if (lastIndex >= 0) {
-                  updated[lastIndex] = { ...updated[lastIndex], content: assistantMessage.content };
-                }
-                return { ...conversation, messages: updated, updatedAt: Date.now() };
-              });
-              scrollToBottom();
-            }
-          }
-        } catch (error) {
-          console.error('[App] Response API error:', error);
-          throw error; // Will be caught by outer try-catch
-        }
-      } else {
-        // Fallback: Standard Chat Completions API (only if Response API not configured)
-        console.log('[App] Response API not configured, using standard API');
-        
-        const MAX_CONTEXT_MESSAGES = 20;
-        const messageHistory = updatedMessages.slice(-MAX_CONTEXT_MESSAGES);
-
-        for await (const chunk of streamChatCompletion(messageHistory)) {
-          // Check if generation was stopped
-          if (controller.signal.aborted) {
-            break;
-          }
-
-          assistantMessage.content += chunk;
-
-          // Batch updates: only update state every few chunks to reduce re-renders
-          const contentLength = assistantMessage.content.length;
-          const shouldUpdate = contentLength % 50 === 0 || chunk.includes('\n');
-          
-          if (shouldUpdate) {
-            updateConversationById(conversationId, (conversation) => {
-              const updated = [...conversation.messages];
-              const lastIndex = updated.length - 1;
-              if (lastIndex >= 0) {
-                updated[lastIndex] = { ...updated[lastIndex], content: assistantMessage.content };
-              }
-              return { ...conversation, messages: updated, updatedAt: Date.now() };
-            });
-            scrollToBottom();
-          }
-        }
+          return { ...conversation, messages: updated, updatedAt: Date.now() };
+        });
+        scrollToBottom();
       }
 
-      // Final update to ensure all content is displayed
-      updateConversationById(conversationId, (conversation) => {
-        const updated = [...conversation.messages];
-        const lastIndex = updated.length - 1;
-        if (lastIndex >= 0) {
-          updated[lastIndex] = { ...updated[lastIndex], content: assistantMessage.content };
-        }
-        return { ...conversation, messages: updated, updatedAt: Date.now() };
-      });
-
-      // Save assistant message to database after streaming completes
       if (assistantMessage.content) {
         try {
           await api.addMessage(conversationId, 'assistant', assistantMessage.content);
@@ -1039,55 +720,36 @@ function App() {
         }
       }
 
-      // Generate and update title based on assistant's first response
       if (isFirstMessage && assistantMessage.content) {
-        try {
-          const generatedTitle = await generateTitleFromResponse(
-            userMessage.displayContent || userMessage.content,
-            assistantMessage.content
-          );
-          
-          if (generatedTitle !== DEFAULT_TITLE) {
-            // Update title in database
-            await api.updateConversationTitle(conversationId, generatedTitle);
-            
-            // Update title in state
-            updateConversationById(conversationId, (conversation) => ({
-              ...conversation,
-              title: generatedTitle,
-            }));
-            
-            console.log('[App] ✓ Generated title:', generatedTitle);
-          }
-        } catch (error) {
-          console.error('Failed to generate/update conversation title:', error);
-        }
+        const generatedTitle = summarizeTitle(activeConversation || { title: DEFAULT_TITLE } as any, content);
+        await api.updateConversationTitle(conversationId, generatedTitle);
+        updateConversationById(conversationId, (conversation) => ({
+          ...conversation,
+          title: generatedTitle,
+        }));
       }
     } catch (error: any) {
-      // Check if it was aborted by user
       if (error.name === 'AbortError' || controller.signal.aborted) {
         console.log('Generation stopped by user');
-        // Keep the partial response that was generated
       } else {
         console.error('Error sending message:', error);
         const errorMessage: Message = {
           role: 'assistant',
           content: 'Sorry, I encountered an error processing your request. Please try again.',
         };
-      updateConversationById(conversationId, (conversation) => {
-        const updated = [...conversation.messages];
-        if (updated.length && updated[updated.length - 1].role === 'assistant') {
-          updated[updated.length - 1] = errorMessage;
-        } else {
-          updated.push(errorMessage);
-        }
-
-        return {
-          ...conversation,
-          messages: updated,
-          updatedAt: Date.now(),
-        };
-      });
+        updateConversationById(conversationId, (conversation) => {
+          const updated = [...conversation.messages];
+          if (updated.length && updated[updated.length - 1].role === 'assistant') {
+            updated[updated.length - 1] = errorMessage;
+          } else {
+            updated.push(errorMessage);
+          }
+          return {
+            ...conversation,
+            messages: updated,
+            updatedAt: Date.now(),
+          };
+        });
       }
     } finally {
       setAbortController(null);
@@ -1095,7 +757,6 @@ function App() {
     }
   };
 
-  // Show authentication screens if not authenticated
   if (authLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[var(--bg-app)]">
@@ -1108,7 +769,6 @@ function App() {
   }
 
   if (!isAuthenticated) {
-    // Show landing page first
     if (showLanding) {
       return (
         <LandingPage 
@@ -1124,15 +784,14 @@ function App() {
       );
     }
 
-    if (showResetPassword && resetToken) {
+    if (showResetPassword) {
       return (
         <ResetPasswordPage 
-          token={resetToken} 
           onSuccess={() => {
             setShowResetPassword(false);
-            setResetToken('');
             setShowSignup(false);
             setShowForgotPassword(false);
+            setShowLanding(true);
           }} 
         />
       );
@@ -1159,7 +818,6 @@ function App() {
     );
   }
 
-  // Show profile page as a separate screen
   if (showProfile) {
     return <ProfilePage onBack={() => {
       setShowProfile(false);
@@ -1244,14 +902,6 @@ function App() {
         </button>
       </div>
 
-      {/* Search Modal */}
-      <SearchModal
-        isOpen={isSearchModalOpen}
-        onClose={() => setIsSearchModalOpen(false)}
-        conversations={conversations}
-        onSelectConversation={handleSelectConversation}
-      />
-
       <div className="flex flex-1 flex-col">
         <header className="border-b border-[var(--border-strong)] bg-[var(--bg-panel)]/95 backdrop-blur-md transition-colors relative z-40">
           <div className="flex w-full items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
@@ -1268,7 +918,7 @@ function App() {
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-sm sm:text-base font-semibold text-[var(--text-primary)] truncate">ChatGPT Clone</h1>
-              <p className="text-xs sm:text-sm text-[var(--text-tertiary)] truncate">Powered by Azure OpenAI</p>
+              <p className="text-xs sm:text-sm text-[var(--text-tertiary)] truncate">Powered by Gemini AI</p>
             </div>
             <div className="flex-shrink-0 flex items-center gap-2">
               <button
@@ -1291,7 +941,7 @@ function App() {
         </header>
 
         <main className="flex-1 overflow-y-auto bg-[var(--bg-app)] transition-colors">
-          <div className="w-full px-3 py-4 sm:px-6 sm:py-8">
+          <div className="w-full px-3 py-4 sm:px-6 sm:py-8 h-full">
             {shouldShowWelcome && !activeConversationId ? (
               <WelcomePage 
                 onNewChat={handleNewConversation}

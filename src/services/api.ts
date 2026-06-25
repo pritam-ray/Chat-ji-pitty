@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+import { supabase } from './supabase';
 
 export interface Conversation {
   id: string;
@@ -9,111 +9,245 @@ export interface Conversation {
   messages: any[];
 }
 
-// Get auth headers
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('accessToken');
+const isSupabaseConfigured = !!(
+  import.meta.env.VITE_SUPABASE_URL && 
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
+if (!isSupabaseConfigured) {
+  console.log('[API] Supabase not configured. Using localStorage fallback for persistence.');
+}
+
+const LOCAL_STORAGE_KEY = 'chatgpt-clone-db-conversations';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+
+function getLocalConversations(): Conversation[] {
+  const data = localStorage.getItem(LOCAL_STORAGE_KEY);
+  return data ? JSON.parse(data) : [];
+}
+
+function saveLocalConversations(convs: Conversation[]) {
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(convs));
+}
+
+// Fetch all conversations from Supabase (or localStorage) - scoped to user_id
+export async function fetchConversations(): Promise<Conversation[]> {
+  if (!isSupabaseConfigured) {
+    return getLocalConversations().sort((a, b) => b.updated_at - a.updated_at);
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return [];
+  }
+
+  const { data: conversations, error } = await supabase
+    .from('conversations')
+    .select('*, messages(*, attachments(*))')
+    .eq('user_id', user.id)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[Supabase] fetchConversations error:', error);
+    throw error;
+  }
+
+  return (conversations || []).map((conv: any) => ({
+    id: conv.id,
+    title: conv.title,
+    azure_response_id: conv.azure_response_id || undefined,
+    created_at: Number(conv.created_at),
+    updated_at: Number(conv.updated_at),
+    messages: (conv.messages || [])
+      .sort((a: any, b: any) => Number(a.created_at) - Number(b.created_at))
+      .map((msg: any) => ({
+        id: String(msg.id),
+        role: msg.role,
+        content: msg.content,
+        displayContent: msg.display_content || undefined,
+        attachments: (msg.attachments || []).map((att: any) => ({
+          type: att.type,
+          mimeType: att.mime_type,
+          dataUrl: att.file_data,
+          fileName: att.file_name,
+          fileSize: att.file_size || undefined,
+        }))
+      }))
+  }));
+}
+
+// Get single conversation - scoped to user_id
+export async function fetchConversation(id: string): Promise<Conversation> {
+  if (!isSupabaseConfigured) {
+    const local = getLocalConversations().find(c => c.id === id);
+    if (!local) throw new Error('Conversation not found');
+    return local;
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: conv, error } = await supabase
+    .from('conversations')
+    .select('*, messages(*, attachments(*))')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single();
+
+  if (error) {
+    console.error('[Supabase] fetchConversation error:', error);
+    throw error;
+  }
+
   return {
-    'Content-Type': 'application/json',
-    ...(token && { 'Authorization': `Bearer ${token}` })
+    id: conv.id,
+    title: conv.title,
+    azure_response_id: conv.azure_response_id || undefined,
+    created_at: Number(conv.created_at),
+    updated_at: Number(conv.updated_at),
+    messages: (conv.messages || [])
+      .sort((a: any, b: any) => Number(a.created_at) - Number(b.created_at))
+      .map((msg: any) => ({
+        id: String(msg.id),
+        role: msg.role,
+        content: msg.content,
+        displayContent: msg.display_content || undefined,
+        attachments: (msg.attachments || []).map((att: any) => ({
+          type: att.type,
+          mimeType: att.mime_type,
+          dataUrl: att.file_data,
+          fileName: att.file_name,
+          fileSize: att.file_size || undefined,
+        }))
+      }))
   };
 }
 
-// Refresh access token helper
-async function refreshAccessToken(): Promise<boolean> {
-  const refreshToken = localStorage.getItem('refreshToken');
-  if (!refreshToken) return false;
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken })
-    });
-
-    if (!response.ok) return false;
-
-    const data = await response.json();
-    localStorage.setItem('accessToken', data.accessToken);
-    return true;
-  } catch (error) {
-    console.error('Token refresh failed:', error);
-    return false;
-  }
-}
-
-// Fetch wrapper with automatic token refresh
-async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-  const response = await fetch(url, {
-    ...options,
-    headers: { ...getAuthHeaders(), ...(options.headers || {}) }
-  });
-
-  // If unauthorized, try to refresh token and retry once
-  if (response.status === 401) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      return fetch(url, {
-        ...options,
-        headers: { ...getAuthHeaders(), ...(options.headers || {}) }
-      });
-    }
-  }
-
-  return response;
-}
-
-// Fetch all conversations from backend
-export async function fetchConversations(): Promise<Conversation[]> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations`);
-  if (!response.ok) throw new Error('Failed to fetch conversations');
-  return response.json();
-}
-
-// Get single conversation
-export async function fetchConversation(id: string): Promise<Conversation> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations/${id}`);
-  if (!response.ok) throw new Error('Failed to fetch conversation');
-  return response.json();
-}
-
-// Create new conversation in backend
+// Create new conversation in Supabase - includes user_id
 export async function createConversation(
   id: string, 
   title: string, 
   azureResponseId?: string
 ): Promise<Conversation> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations`, {
-    method: 'POST',
-    body: JSON.stringify({ id, title, azureResponseId })
-  });
-  if (!response.ok) throw new Error('Failed to create conversation');
-  return response.json();
+  const now = Date.now();
+
+  if (!isSupabaseConfigured) {
+    const convs = getLocalConversations();
+    const newConv: Conversation = {
+      id,
+      title: title || 'New chat',
+      azure_response_id: azureResponseId,
+      created_at: now,
+      updated_at: now,
+      messages: []
+    };
+    convs.push(newConv);
+    saveLocalConversations(convs);
+    return newConv;
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .insert([{
+      id,
+      title: title || 'New chat',
+      azure_response_id: azureResponseId || null,
+      created_at: now,
+      updated_at: now,
+      user_id: user.id
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[Supabase] createConversation error:', error);
+    throw error;
+  }
+
+  return {
+    id: data.id,
+    title: data.title,
+    azure_response_id: data.azure_response_id || undefined,
+    created_at: Number(data.created_at),
+    updated_at: Number(data.updated_at),
+    messages: []
+  };
 }
 
 // Update conversation title
 export async function updateConversationTitle(id: string, title: string): Promise<void> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations/${id}/title`, {
-    method: 'PATCH',
-    body: JSON.stringify({ title })
-  });
-  if (!response.ok) throw new Error('Failed to update conversation');
+  if (!isSupabaseConfigured) {
+    const convs = getLocalConversations();
+    const target = convs.find(c => c.id === id);
+    if (target) {
+      target.title = title;
+      target.updated_at = Date.now();
+      saveLocalConversations(convs);
+    }
+    return;
+  }
+
+  const { error } = await supabase
+    .from('conversations')
+    .update({
+      title,
+      updated_at: Date.now()
+    })
+    .eq('id', id);
+
+  if (error) {
+    console.error('[Supabase] updateConversationTitle error:', error);
+    throw error;
+  }
 }
 
 // Update conversation Azure response ID
 export async function updateConversationResponse(id: string, azureResponseId: string): Promise<void> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations/${id}/response`, {
-    method: 'PATCH',
-    body: JSON.stringify({ azureResponseId })
-  });
-  if (!response.ok) throw new Error('Failed to update response ID');
+  if (!isSupabaseConfigured) {
+    const convs = getLocalConversations();
+    const target = convs.find(c => c.id === id);
+    if (target) {
+      target.azure_response_id = azureResponseId;
+      target.updated_at = Date.now();
+      saveLocalConversations(convs);
+    }
+    return;
+  }
+
+  const { error } = await supabase
+    .from('conversations')
+    .update({
+      azure_response_id: azureResponseId,
+      updated_at: Date.now()
+    })
+    .eq('id', id);
+
+  if (error) {
+    console.error('[Supabase] updateConversationResponse error:', error);
+    throw error;
+  }
 }
 
 // Delete conversation
 export async function deleteConversation(id: string): Promise<void> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations/${id}`, {
-    method: 'DELETE'
-  });
-  if (!response.ok) throw new Error('Failed to delete conversation');
+  if (!isSupabaseConfigured) {
+    const convs = getLocalConversations().filter(c => c.id !== id);
+    saveLocalConversations(convs);
+    return;
+  }
+
+  const { error } = await supabase
+    .from('conversations')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('[Supabase] deleteConversation error:', error);
+    throw error;
+  }
 }
 
 // Add message to conversation
@@ -124,58 +258,141 @@ export async function addMessage(
   displayContent?: string,
   attachments?: any[]
 ): Promise<void> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({
+  const now = Date.now();
+
+  if (!isSupabaseConfigured) {
+    const convs = getLocalConversations();
+    const target = convs.find(c => c.id === conversationId);
+    if (target) {
+      const newMessage = {
+        id: Math.random().toString(36).slice(2, 11),
+        role,
+        content,
+        displayContent: displayContent || content,
+        created_at: now,
+        attachments: attachments || []
+      };
+      target.messages.push(newMessage);
+      target.updated_at = now;
+      saveLocalConversations(convs);
+    }
+    return;
+  }
+
+  const { data: message, error: messageError } = await supabase
+    .from('messages')
+    .insert([{
+      conversation_id: conversationId,
       role,
       content,
-      displayContent: displayContent || content,
-      attachments: attachments || []
-    })
-  });
-  if (!response.ok) throw new Error('Failed to add message');
-}
+      display_content: displayContent || content,
+      created_at: now
+    }])
+    .select()
+    .single();
 
-// Delete last message from conversation
-export async function deleteLastMessage(conversationId: string): Promise<void> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations/${conversationId}/messages/last`, {
-    method: 'DELETE'
-  });
-  if (!response.ok) throw new Error('Failed to delete last message');
-}
-
-// Azure session management
-export async function saveAzureSession(
-  sessionId: string,
-  conversationId: string,
-  modelName?: string,
-  totalTokens?: number
-): Promise<void> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/azure-sessions`, {
-    method: 'POST',
-    body: JSON.stringify({ sessionId, conversationId, modelName, totalTokens })
-  });
-  if (!response.ok) throw new Error('Failed to save Azure session');
-}
-
-export async function getAzureSession(conversationId: string): Promise<any> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/conversations/${conversationId}/session`);
-  if (!response.ok) {
-    if (response.status === 404) return null;
-    throw new Error('Failed to fetch Azure session');
+  if (messageError) {
+    console.error('[Supabase] addMessage error:', messageError);
+    throw messageError;
   }
-  return response.json();
+
+  if (attachments && attachments.length > 0) {
+    const attachmentInserts = attachments.map(att => ({
+      message_id: message.id,
+      type: att.type,
+      mime_type: att.mimeType,
+      file_name: att.fileName,
+      file_size: att.fileSize || null,
+      file_data: att.dataUrl,
+      created_at: now
+    }));
+
+    const { error: attError } = await supabase
+      .from('attachments')
+      .insert(attachmentInserts);
+
+    if (attError) {
+      console.error('[Supabase] addMessage attachments error:', attError);
+      throw attError;
+    }
+  }
+
+  // Update conversation's updated_at timestamp
+  const { error: convError } = await supabase
+    .from('conversations')
+    .update({ updated_at: now })
+    .eq('id', conversationId);
+
+  if (convError) {
+    console.error('[Supabase] addMessage conversation timestamp update error:', convError);
+  }
 }
 
-// Web Search API
+// Delete last message from conversation (used for regeneration)
+export async function deleteLastMessage(conversationId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    const convs = getLocalConversations();
+    const target = convs.find(c => c.id === conversationId);
+    if (target && target.messages.length > 0) {
+      target.messages.pop();
+      target.updated_at = Date.now();
+      saveLocalConversations(convs);
+    }
+    return;
+  }
+
+  // Get the last message ID for this conversation
+  const { data: messages, error: fetchError } = await supabase
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (fetchError) {
+    console.error('[Supabase] deleteLastMessage fetch error:', fetchError);
+    throw fetchError;
+  }
+
+  if (messages && messages.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('messages')
+      .delete()
+      .eq('id', messages[0].id);
+
+    if (deleteError) {
+      console.error('[Supabase] deleteLastMessage delete error:', deleteError);
+      throw deleteError;
+    }
+  }
+}
+
+// Azure session management (stubbed out for backwards compatibility)
+export async function saveAzureSession(
+  _sessionId: string,
+  _conversationId: string,
+  _modelName?: string,
+  _totalTokens?: number
+): Promise<void> {
+  // Not used in Gemini mode, but kept for compatibility
+}
+
+export async function getAzureSession(_conversationId: string): Promise<any> {
+  return null;
+}
+
+// Web Search API (Proxy to stateless Express proxy)
 export async function searchWeb(message: string, conversationId?: string): Promise<{
   success: boolean;
   response: string;
   usedWebSearch: boolean;
   error?: string;
 }> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/chat/search`, {
+  const response = await fetch(`${API_BASE_URL}/chat/search`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify({ message, conversationId })
   });
   if (!response.ok) throw new Error('Web search failed');
@@ -190,8 +407,11 @@ export async function searchWebStream(
   onError: (error: string) => void
 ): Promise<void> {
   try {
-    const response = await fetchWithAuth(`${API_BASE_URL}/chat/search/stream`, {
+    const response = await fetch(`${API_BASE_URL}/chat/search/stream`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({ message, conversationId })
     });
 

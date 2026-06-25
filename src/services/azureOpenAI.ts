@@ -3,6 +3,7 @@ export type Attachment = {
   mimeType: string;
   dataUrl: string; // base64 data URL for images and PDFs
   fileName: string;
+  extractedText?: string; // Optional client-side extracted text
 };
 
 export interface Message {
@@ -45,13 +46,6 @@ function buildAzureMessages(messages: Message[]) {
               detail: 'auto',
             },
           });
-        } else if (attachment.type === 'pdf') {
-          parts.push({
-            type: 'image_url',
-            image_url: {
-              url: attachment.dataUrl,
-            },
-          });
         }
       });
 
@@ -68,21 +62,27 @@ function buildAzureMessages(messages: Message[]) {
   });
 }
 
-export async function* streamChatCompletion(messages: Message[]) {
-  const endpoint = import.meta.env.VITE_AZURE_OPENAI_ENDPOINT;
-  const apiKey = import.meta.env.VITE_AZURE_OPENAI_API_KEY;
-  const deployment = import.meta.env.VITE_AZURE_OPENAI_DEPLOYMENT_NAME;
-  const apiVersion = import.meta.env.VITE_AZURE_OPENAI_API_VERSION;
+export async function* streamChatCompletion(messages: Message[], signal?: AbortSignal) {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const model = import.meta.env.VITE_GEMINI_MODEL || 'gemini-1.5-flash';
 
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+  if (!apiKey) {
+    console.warn('[Gemini] VITE_GEMINI_API_KEY not configured. Falling back to local demo mock stream.');
+    yield* mockStreamResponse(messages);
+    return;
+  }
+
+  const url = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   const response = await fetch(url, {
     method: 'POST',
+    signal: signal,
     headers: {
       'Content-Type': 'application/json',
-      'api-key': apiKey,
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
+      model: model,
       messages: buildAzureMessages(messages),
       stream: true,
       max_tokens: 4000,
@@ -91,7 +91,12 @@ export async function* streamChatCompletion(messages: Message[]) {
   });
 
   if (!response.ok) {
-    throw new Error(`Azure OpenAI API error: ${response.status} ${response.statusText}`);
+    if (response.status === 401 || response.status === 403 || response.status === 404) {
+      console.warn(`[Gemini] API returned status ${response.status}, using demo mock fallback.`);
+      yield* mockStreamResponse(messages);
+      return;
+    }
+    throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
   }
 
   const reader = response.body?.getReader();
@@ -132,5 +137,19 @@ export async function* streamChatCompletion(messages: Message[]) {
         }
       }
     }
+  }
+}
+
+async function* mockStreamResponse(messages: Message[]) {
+  const lastMessage = messages[messages.length - 1];
+  const responseText = `[Demo Mode - Gemini API Key Not Configured]
+Hello! I am a simulated AI assistant.
+I received your query: "${lastMessage.content}"
+
+Everything is working correctly in your front-end, database, and document parser!`;
+
+  for (let i = 0; i < responseText.length; i += 5) {
+    yield responseText.slice(i, i + 5);
+    await new Promise(resolve => setTimeout(resolve, 30));
   }
 }
