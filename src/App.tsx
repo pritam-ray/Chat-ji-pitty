@@ -936,7 +936,7 @@ function App() {
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-sm sm:text-base font-semibold text-[var(--text-primary)] truncate">Chat-ji-Pitty</h1>
-              <p className="text-xs sm:text-sm text-[var(--text-tertiary)] truncate">Powered by Gemini AI</p>
+              <p className="text-xs sm:text-sm text-[var(--text-tertiary)] truncate">Powered by {import.meta.env.VITE_GROQ_API_KEY ? 'Llama AI (Groq)' : 'Gemini AI'}</p>
             </div>
             <div className="flex-shrink-0 flex items-center gap-2">
               {!isAuthenticated && (

@@ -3,8 +3,20 @@ const cheerio = require('cheerio');
 
 class WebSearchService {
   constructor(geminiApiKey) {
-    this.apiKey = geminiApiKey;
-    this.model = process.env.VITE_GEMINI_MODEL || 'gemini-1.5-flash';
+    // Detect provider: Groq takes priority over Gemini
+    const groqKey = process.env.VITE_GROQ_API_KEY;
+    if (groqKey) {
+      this.provider = 'groq';
+      this.apiKey = groqKey;
+      this.model = process.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile';
+      this.baseUrl = 'https://api.groq.com/openai/v1/chat/completions';
+    } else {
+      this.provider = 'gemini';
+      this.apiKey = geminiApiKey;
+      this.model = process.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash';
+      this.baseUrl = '';
+    }
+    console.log(`[WebSearchService] Using provider: ${this.provider}, model: ${this.model}`);
   }
 
   async scrapeWebPage(url, maxLength = 3000) {
@@ -147,39 +159,19 @@ class WebSearchService {
         onToken('✓ Search complete. Analyzing results...\n\n');
       }
 
-      // Build message array for Gemini OpenAI-compatible completions
-      const messages = [
-        {
-          role: 'system',
-          content: 'You are a knowledgeable AI assistant with access to real-time web search results.\n' +
-            'Your responses should be:\n' +
-            '1. Accurate and based on the current web search results provided\n' +
-            '2. Well-structured with clear sections or bullet points when appropriate\n' +
-            '3. Comprehensive yet concise\n' +
-            '4. Include relevant facts, dates, and context from the search results\n' +
-            '5. Cite sources by mentioning website names or organizations when presenting information\n' +
-            '6. Provide up-to-date information based on the search results\n\n' +
-            'Format your response in a user-friendly way with proper paragraphs and organization.'
-        }
-      ];
-
-      // Add history
-      conversationHistory.forEach(msg => {
-        messages.push({
-          role: msg.role === 'assistant' ? 'assistant' : 'user',
-          content: msg.content
-        });
-      });
-
-      // Add query with search results
-      messages.push({
-        role: 'user',
-        content: `Question: ${userMessage}\n\n${searchResults}\n\nBased on the web search results provided above, please give me a comprehensive and well-organized answer to my question. Structure your response with clear paragraphs and include relevant details from the sources.`
-      });
+      const systemInstruction = 'You are a knowledgeable AI assistant with access to real-time web search results.\n' +
+        'Your responses should be:\n' +
+        '1. Accurate and based on the current web search results provided\n' +
+        '2. Well-structured with clear sections or bullet points when appropriate\n' +
+        '3. Comprehensive yet concise\n' +
+        '4. Include relevant facts, dates, and context from the search results\n' +
+        '5. Cite sources by mentioning website names or organizations when presenting information\n' +
+        '6. Provide up-to-date information based on the search results\n\n' +
+        'Format your response in a user-friendly way with proper paragraphs and organization.';
 
       if (!this.apiKey) {
         if (onToken) {
-          onToken('[Demo Mode - Gemini API Key Not Configured in Backend]\n');
+          onToken('[Demo Mode - API Key Not Configured in Backend]\n');
           onToken('Here is what was found:\n' + searchResults.substring(0, 500) + '...');
         }
         return { success: true, usedWebSearch: true };
@@ -188,48 +180,85 @@ class WebSearchService {
       const apiKeys = this.apiKey.split(',').map(k => k.trim()).filter(Boolean);
       if (apiKeys.length === 0) {
         if (onToken) {
-          onToken('[Demo Mode - Gemini API Key Not Configured in Backend]\n');
+          onToken('[Demo Mode - API Key Not Configured in Backend]\n');
           onToken('Here is what was found:\n' + searchResults.substring(0, 500) + '...');
         }
         return { success: true, usedWebSearch: true };
       }
 
+      const userQuery = `Question: ${userMessage}\n\n${searchResults}\n\nBased on the web search results provided above, please give me a comprehensive and well-organized answer to my question. Structure your response with clear paragraphs and include relevant details from the sources.`;
+
       let lastError = null;
-      const url = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
       for (let idx = 0; idx < apiKeys.length; idx++) {
         const key = apiKeys[idx];
-        console.log(`[WebSearchService] Attempting connection with API key index ${idx + 1}/${apiKeys.length}`);
+        console.log(`[WebSearchService] Attempting ${this.provider} key ${idx + 1}/${apiKeys.length}`);
 
         try {
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${key}`,
-            },
-            body: JSON.stringify({
-              model: this.model,
-              messages,
-              stream: true,
-              max_tokens: 4000,
-              temperature: 0.7,
-            })
-          });
+          let response;
+
+          if (this.provider === 'groq') {
+            // Groq: OpenAI-compatible format
+            const messages = [
+              { role: 'system', content: systemInstruction }
+            ];
+            conversationHistory.forEach(msg => {
+              messages.push({
+                role: msg.role === 'assistant' ? 'assistant' : 'user',
+                content: msg.content
+              });
+            });
+            messages.push({ role: 'user', content: userQuery });
+
+            response = await fetch(this.baseUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${key}`,
+              },
+              body: JSON.stringify({
+                model: this.model,
+                messages,
+                stream: true,
+                max_tokens: 4000,
+                temperature: 0.7,
+              }),
+            });
+          } else {
+            // Gemini: Native format
+            const contents = [];
+            conversationHistory.forEach(msg => {
+              contents.push({
+                role: msg.role === 'assistant' ? 'model' : 'user',
+                parts: [{ text: msg.content }]
+              });
+            });
+            contents.push({ role: 'user', parts: [{ text: userQuery }] });
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:streamGenerateContent?alt=sse&key=${key}`;
+            response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents,
+                generationConfig: { maxOutputTokens: 4000, temperature: 0.7 },
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+              }),
+            });
+          }
 
           if (!response.ok) {
-            console.warn(`[WebSearchService] Key ${idx + 1} failed with status: ${response.status}`);
-            lastError = new Error(`Gemini API returned ${response.status}`);
-            continue; // Rotate to next key
+            const errorText = await response.text().catch(() => '');
+            console.warn(`[WebSearchService] Key ${idx + 1} failed: ${response.status}`, errorText);
+            lastError = new Error(`API returned ${response.status}`);
+            continue;
           }
 
           const reader = response.body?.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
 
-          if (!reader) {
-            throw new Error('Response body is not readable');
-          }
+          if (!reader) throw new Error('Response body is not readable');
 
           while (true) {
             const { done, value } = await reader.read();
@@ -246,7 +275,12 @@ class WebSearchService {
               if (trimmedLine.startsWith('data: ')) {
                 try {
                   const data = JSON.parse(trimmedLine.slice(6));
-                  const token = data.choices?.[0]?.delta?.content;
+                  let token;
+                  if (this.provider === 'groq') {
+                    token = data?.choices?.[0]?.delta?.content;
+                  } else {
+                    token = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                  }
                   if (token && onToken) {
                     onToken(token);
                   }
@@ -259,12 +293,11 @@ class WebSearchService {
 
           return { success: true, usedWebSearch: true };
         } catch (err) {
-          console.warn(`[WebSearchService] Error with Key ${idx + 1}: ${err.message}`);
+          console.warn(`[WebSearchService] Key ${idx + 1} error: ${err.message}`);
           lastError = err;
         }
       }
 
-      // If all keys fail, throw the last error
       throw lastError || new Error('All configured API keys failed.');
     } catch (error) {
       console.error('[WebSearchService] Streaming error:', error);
