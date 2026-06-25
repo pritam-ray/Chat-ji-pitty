@@ -555,9 +555,18 @@ function App() {
     attachments?: Attachment[],
     useWebSearch?: boolean,
   ) => {
+    let conversationId = activeConversationId;
+    let currentActive = conversations.find(c => c.id === conversationId);
+    let isFirstMessage = currentActive ? currentActive.messages.length === 0 : true;
+    let dbAlreadyCreated = false;
+
     // If no active conversation, create one first
-    if (!activeConversationId) {
+    if (!conversationId) {
       const conversation = createConversation();
+      conversationId = conversation.id;
+      currentActive = conversation;
+      isFirstMessage = true;
+      dbAlreadyCreated = true;
       
       try {
         await api.createConversation(conversation.id, conversation.title);
@@ -571,18 +580,9 @@ function App() {
         conversations: [conversation, ...prev.conversations],
         activeConversationId: conversation.id,
       }));
-      
-      setTimeout(() => {
-        handleSendMessage(content, displayContent, _fileName, attachments, useWebSearch);
-      }, 100);
-      return;
     }
 
-    const conversationId = activeConversationId;
-    const currentActive = conversations.find(c => c.id === conversationId);
-    const isFirstMessage = currentActive ? currentActive.messages.length === 0 : true;
-    
-    if (isFirstMessage) {
+    if (isFirstMessage && !dbAlreadyCreated) {
       try {
         await api.createConversation(conversationId, DEFAULT_TITLE);
       } catch (error: any) {
