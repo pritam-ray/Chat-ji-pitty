@@ -1,188 +1,105 @@
-# Quick Setup Guide
+# Production Setup & Deployment Guide
 
-## Step 1: Create Database
+This guide describes how to deploy the ChatGPT Clone application using **Supabase** for database/authentication, **Netlify** for the frontend React application, and **Render** for the stateless Web Search backend proxy.
 
-1. Open MySQL Workbench
-2. Copy the entire content from `database_setup.sql`
-3. Paste and execute in MySQL Workbench
-4. Verify tables created:
-   ```sql
-   USE chatbot;
-   SHOW TABLES;
-   -- Should show: conversations, messages, attachments, azure_sessions
-   ```
+---
 
-## Step 2: Configure Backend
+## 🛠️ Step 1: Create and Configure Supabase
 
-1. Navigate to server directory:
-   ```bash
-   cd server
-   ```
+Supabase is a serverless alternative to Firebase that hosts PostgreSQL and handles User Authentication out-of-the-box.
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+1. Sign up/log in to [Supabase](https://supabase.com/).
+2. Click **New Project** and create a project in your preferred region.
+3. Open the **SQL Editor** tab in the sidebar dashboard.
+4. Click **New Query**, paste the following SQL schema, and click **Run**:
 
-3. Create `.env` file:
-   ```bash
-   cp .env.example .env
-   ```
+```sql
+-- Conversations Table
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT 'New chat',
+  azure_response_id TEXT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
 
-4. Edit `server/.env` with your MySQL credentials:
-   ```env
-   PORT=4000
-   DB_HOST=localhost
-   DB_USER=root
-   DB_PASSWORD=your_mysql_password_here
-   DB_NAME=chatbot
-   ```
+-- Messages Table
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGSERIAL PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  content TEXT NOT NULL,
+  display_content TEXT NULL,
+  created_at BIGINT NOT NULL
+);
 
-5. Start server:
-   ```bash
-   npm start
-   ```
-
-   You should see:
-   ```
-   ✓ MySQL database connected successfully
-   Server running on http://localhost:4000
-   ```
-
-## Step 3: Configure Frontend
-
-1. Go back to root directory:
-   ```bash
-   cd ..
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Create `.env` file:
-   ```bash
-   cp .env.example .env
-   ```
-
-4. Edit `.env` with your Azure OpenAI credentials:
-   ```env
-   VITE_AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com
-   VITE_AZURE_OPENAI_API_KEY=your-azure-api-key-here
-   VITE_AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment-name
-   VITE_AZURE_OPENAI_API_VERSION=2024-08-01-preview
-   VITE_API_BASE_URL=http://localhost:4000/api
-   ```
-
-5. Start frontend:
-   ```bash
-   npm run dev
-   ```
-
-   Open browser at `http://localhost:5173`
-
-## Step 4: Test the App
-
-1. Click "New chat" button
-2. Type a message and send
-3. Watch the response stream in real-time
-4. Check the console logs:
-   - `[App] Using Azure Response API with session management` (for text messages)
-   - Session ID will be created and stored
-
-5. Send another message in the same conversation:
-   - Azure will use the stored session ID
-   - No full history sent = lower token costs!
-
-6. Verify in database:
-   ```sql
-   USE chatbot;
-   
-   -- Check conversations
-   SELECT id, title, azure_session_id, 
-          FROM_UNIXTIME(created_at/1000) as created 
-   FROM conversations;
-   
-   -- Check messages
-   SELECT c.title, m.role, LEFT(m.content, 50) as content
-   FROM messages m
-   JOIN conversations c ON m.conversation_id = c.id
-   ORDER BY m.created_at DESC
-   LIMIT 10;
-   ```
-
-## Troubleshooting
-
-### Backend Issues
-
-**Error: Access denied for user**
-- Check MySQL credentials in `server/.env`
-- Verify user has permissions: `GRANT ALL ON chatbot.* TO 'your_user'@'localhost';`
-
-**Error: Database 'chatbot' doesn't exist**
-- Run `database_setup.sql` in MySQL Workbench first
-
-**Port 4000 already in use**
-- Change `PORT` in `server/.env` to another port (e.g., 4001)
-- Update `VITE_API_BASE_URL` in frontend `.env` accordingly
-
-### Frontend Issues
-
-**Error: Failed to fetch conversations**
-- Ensure backend server is running on port 4000
-- Check `VITE_API_BASE_URL` in `.env`
-- Check browser console for CORS errors
-
-**Azure API errors**
-- Verify `VITE_AZURE_OPENAI_ENDPOINT` is correct
-- Check `VITE_AZURE_OPENAI_API_KEY` is valid
-- Ensure `VITE_AZURE_OPENAI_DEPLOYMENT_NAME` matches your deployment
-- Try API version `2024-08-01-preview` or `2024-02-15-preview`
-
-**Session API not working**
-- Check console for `[App] Using Azure Response API with session management`
-- If you see "session API unavailable", it will fall back to standard API (still works!)
-- Response API may not be available in all regions yet
-
-### Testing Session Management
-
-1. Open browser dev tools (F12) → Console tab
-2. Send a message
-3. Look for: `[App] Using Azure Response API with session management`
-4. Check database for session ID:
-   ```sql
-   SELECT title, azure_session_id FROM conversations 
-   WHERE azure_session_id IS NOT NULL;
-   ```
-
-## Production Deployment
-
-### Backend
-```bash
-cd server
-npm install --production
-# Use PM2 or similar for process management
-pm2 start server.js --name chatbot-api
+-- Attachments Table
+CREATE TABLE IF NOT EXISTS attachments (
+  id BIGSERIAL PRIMARY KEY,
+  message_id BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('image', 'pdf', 'audio', 'file')),
+  mime_type TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_size INTEGER NULL,
+  file_data TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
 ```
 
-### Frontend
-```bash
-npm run build
-# Serve the dist/ folder with nginx, Apache, or hosting service
-```
+5. In the Supabase sidebar, navigate to **Project Settings** -> **API**.
+6. Copy your **Project URL** and **Anon Public Key**. You will need these for deployment.
 
-### Environment Variables in Production
-- Use secure vaults for API keys
-- Enable HTTPS for backend API
-- Configure CORS properly for your domain
-- Use connection pooling for MySQL (already configured)
+---
 
-## Next Steps
+## 🚀 Step 2: Deploy Frontend on Netlify
 
-- Add user authentication
-- Implement conversation sharing
-- Add rate limiting
-- Set up backup for MySQL database
-- Monitor token usage with `azure_sessions` table
-- Add conversation export feature
+Netlify hosts static web applications directly from GitHub with automatic rebuilds on push.
+
+1. Commit your codebase to GitHub.
+2. Sign in to [Netlify](https://www.netlify.com/).
+3. Click **Add new site** -> **Import an existing project** -> Choose **GitHub**.
+4. Authorize Netlify and select your cloned repository (`Personalized-chatbot`).
+5. Configure the Build Settings:
+   - **Base directory**: (Leave blank if Vite is in the root directory. If your code is inside a subfolder, select it, otherwise leave empty).
+   - **Build command**: `npm run build`
+   - **Publish directory**: `dist`
+6. Click **Add Environment Variables** and define the following variables:
+   - `VITE_SUPABASE_URL`: (Your Supabase project URL)
+   - `VITE_SUPABASE_ANON_KEY`: (Your Supabase Anon Public Key)
+   - `VITE_GEMINI_API_KEY`: (Your Google Gemini API Key from Google AI Studio)
+   - `VITE_GEMINI_MODEL`: `gemini-1.5-flash`
+   - `VITE_API_BASE_URL`: (Your Render backend proxy URL, e.g. `https://your-app.onrender.com/api` - you can configure this after Step 3)
+7. Click **Deploy Site**. Netlify will build and host the app, providing a production URL (e.g., `https://your-site.netlify.app`).
+
+---
+
+## 🌐 Step 3: Deploy Search Proxy on Render (Optional)
+
+Since scraping web pages directly from the browser throws CORS security blocks, we use a stateless Express server to proxy Web Search (DuckDuckGo search queries).
+
+1. Sign in to [Render](https://render.com/).
+2. Click **New** -> **Web Service** -> Connect your GitHub repository.
+3. Configure the Web Service settings:
+   - **Name**: `chatbot-search-proxy`
+   - **Runtime**: `Node`
+   - **Root Directory**: `server`
+   - **Build Command**: `npm install`
+   - **Start Command**: `node server.js`
+   - **Instance Type**: **Free**
+4. Open the **Environment** tab on Render and add the environment variables:
+   - `VITE_GEMINI_API_KEY`: (Your Google Gemini API Key)
+   - `VITE_GEMINI_MODEL`: `gemini-1.5-flash`
+5. Click **Deploy Web Service**.
+6. Render will compile and deploy your backend proxy, generating a public URL (e.g., `https://chatbot-search-proxy.onrender.com`).
+7. **Important**: Go back to your **Netlify Environment Variables** and set `VITE_API_BASE_URL` to `https://chatbot-search-proxy.onrender.com/api` so that the frontend can call your search proxy! Re-deploy the Netlify frontend to apply the variable.
+
+---
+
+## 🔐 Enable Supabase Password Reset Redirect
+
+To make password reset emails function correctly:
+1. Open your **Supabase Dashboard**.
+2. Go to **Authentication** -> **URL Configuration**.
+3. Under **Redirect URLs**, click **Add URL** and paste your Netlify deployment URL (e.g., `https://your-site.netlify.app/`).
+4. This ensures that clicking the password reset link inside the recovery email redirect users securely back to your Netlify app.
